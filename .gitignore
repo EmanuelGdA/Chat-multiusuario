@@ -1,9 +1,0 @@
-# Build e arquivos locais
-target/
-data/contatos-*.txt
-.env
-.env.*
-!.env.example
-
-data/arquivos-recebidos/
-data/configuracoes-*.properties
