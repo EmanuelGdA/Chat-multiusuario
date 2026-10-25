@@ -5,29 +5,18 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 
 public class ConexaoFactory {
-    private static final String URL_PADRAO =
-            "jdbc:mysql://localhost:3306/chat_db?useSSL=false&serverTimezone=America/Sao_Paulo&allowPublicKeyRetrieval=true";
 
-    private ConexaoFactory() { }
+    private static final String URL = "jdbc:mysql://localhost:3306/chat_db?useSSL=false&serverTimezone=America/Sao_Paulo&allowPublicKeyRetrieval=true";
+    private static final String USUARIO = "root";
+    private static final String SENHA = "E1manuel@g"; 
 
     public static Connection getConexao() throws SQLException {
-        String url = valorAmbiente("CHAT_DB_URL", URL_PADRAO);
-        String usuario = valorAmbiente("CHAT_DB_USER", "root");
-        String senha = System.getenv("CHAT_DB_PASSWORD");
-        if (senha == null || senha.isBlank()) {
-            throw new SQLException("Configure a variável de ambiente CHAT_DB_PASSWORD antes de iniciar o servidor.");
-        }
-
         try {
+            // Forca o Java a carregar o conector do MySQL na memoria
             Class.forName("com.mysql.cj.jdbc.Driver");
         } catch (ClassNotFoundException e) {
-            throw new SQLException("Driver do MySQL não encontrado no classpath.", e);
+            System.err.println("Driver do MySQL nao encontrado!");
         }
-        return DriverManager.getConnection(url, usuario, senha);
-    }
-
-    private static String valorAmbiente(String nome, String padrao) {
-        String valor = System.getenv(nome);
-        return valor == null || valor.isBlank() ? padrao : valor;
+        return DriverManager.getConnection(URL, USUARIO, SENHA);
     }
 }
