@@ -15,7 +15,7 @@ import java.util.List;
 public class MensagemRepository {
 
     // Salva uma mensagem no MySQL
-    public void salvar(Mensagem mensagem) {
+    public boolean salvar(Mensagem mensagem) {
         String sql = "INSERT INTO mensagens (remetente, conteudo, horario) VALUES (?, ?, ?)";
 
         // Try-with-resources: fecha a conexao automaticamente apos o uso
@@ -28,9 +28,11 @@ public class MensagemRepository {
             stmt.setTimestamp(3, Timestamp.valueOf(mensagem.getHorario()));
 
             stmt.executeUpdate();
+            return true;
 
         } catch (SQLException e) {
             System.err.println("Erro ao salvar mensagem no banco: " + e.getMessage());
+            return false;
         }
     }
 
