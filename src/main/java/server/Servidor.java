@@ -1,84 +1,36 @@
 package server;
 
-import model.Mensagem;
 import persistence.MensagemRepository;
 
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 
 public class Servidor {
 
-    private static final int PORTA = 12345;
-    
-    // Lista sincronizada para evitar Race Conditions (concorrencia entre threads)
-    private final List<ClienteHandler> clientes = Collections.synchronizedList(new ArrayList<>());
+    // Porta 8080 (padrao para navegadores web e celulares)
+    private static final int PORTA = System.getenv("PORT") != null ? Integer.parseInt(System.getenv("PORT")) : 8080;
     private final MensagemRepository repositorio = new MensagemRepository();
-    private boolean rodando = true;
 
     public static void main(String[] args) {
-        Servidor servidor = new Servidor();
-        servidor.iniciar();
+        new Servidor().iniciar();
     }
 
     public void iniciar() {
-        System.out.println("=== SERVIDOR DE CHAT INICIADO NA PORTA " + PORTA + " ===");
+        System.out.println("==================================================");
+        System.out.println("  SERVIDOR DO APP INICIADO NA PORTA " + PORTA);
+        System.out.println("  Acesse no computador: http://localhost:" + PORTA);
+        System.out.println("==================================================");
 
         try (ServerSocket serverSocket = new ServerSocket(PORTA)) {
-
-            // Laco infinito que aceita novas conexoes de clientes
-            while (rodando) {
-                // Aguarda um cliente se conectar (bloqueia ate receber conexao)
-                Socket socketCliente = serverSocket.accept();
-                System.out.println("Novo cliente conectado do endereco: " + socketCliente.getInetAddress());
-
-                // Cria o atendente exclusivo do cliente
-                ClienteHandler handler = new ClienteHandler(socketCliente, this);
-                clientes.add(handler);
-
-                // Executa o cliente em uma nova Thread para nao travar o servidor
-                new Thread(handler).start();
+            while (true) {
+                // Cada nova conexao do navegador ou celular ganha uma Thread propria
+                Socket socket = serverSocket.accept();
+                new Thread(new ClienteHandler(socket, this)).start();
             }
-
         } catch (IOException e) {
-            System.err.println("Erro na execucao do servidor: " + e.getMessage());
+            System.err.println("Erro no servidor: " + e.getMessage());
         }
-    }
-
-    // Processa a mensagem digitada: salva no MySQL e retransmite a todos (Broadcast)
-    public void processarNovaMensagem(String remetente, String texto) {
-        Mensagem mensagem = new Mensagem(remetente, texto);
-
-        // 1. Persiste a mensagem no banco de dados MySQL
-        repositorio.salvar(mensagem);
-
-        // 2. Retransmite (Broadcast) a mensagem formatada para todos os clientes conectados
-        String formatada = mensagem.formatarParaExibicao();
-        transmitirParaTodos(formatada);
-    }
-
-    // Envia mensagens de aviso do sistema (ex: Fulano entrou / saiu)
-    public void transmitirMensagemSistema(String aviso) {
-        transmitirParaTodos("[SISTEMA] " + aviso);
-    }
-
-    // Mecanismo de Broadcast seguro com sincronizacao
-    private void transmitirParaTodos(String texto) {
-        // Bloco sincronizado obrigatorio ao iterar sobre uma lista thread-safe
-        synchronized (clientes) {
-            for (ClienteHandler cliente : clientes) {
-                cliente.enviarMensagem(texto);
-            }
-        }
-    }
-
-    // Remove o cliente da lista quando ele sai ou cai a conexao
-    public void removerCliente(ClienteHandler handler) {
-        clientes.remove(handler);
-        System.out.println("Cliente " + handler.getApelido() + " desconectado.");
     }
 
     public MensagemRepository getRepositorio() {

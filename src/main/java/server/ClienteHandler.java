@@ -2,21 +2,20 @@ package server;
 
 import model.Mensagem;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.Socket;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-// Implementa Runnable para que cada cliente rode em sua propria Thread sem travar os outros
 public class ClienteHandler implements Runnable {
 
     private final Socket socket;
     private final Servidor servidor;
-    private PrintWriter escritor;
-    private BufferedReader leitor;
-    private String apelido;
+    private static final DateTimeFormatter HORA_FORMATO = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     public ClienteHandler(Socket socket, Servidor servidor) {
         this.socket = socket;
@@ -25,77 +24,136 @@ public class ClienteHandler implements Runnable {
 
     @Override
     public void run() {
-        try {
-            // Streams para ler o que o cliente digita e escrever respostas para ele
-            leitor = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            escritor = new PrintWriter(socket.getOutputStream(), true);
+        try (BufferedReader leitor = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+             OutputStream saida = socket.getOutputStream()) {
 
-            // 1. Primeiro passo ao conectar: solicitar o apelido
-            escritor.println("BEM-VINDO! Digite seu apelido:");
-            this.apelido = leitor.readLine();
-
-            if (this.apelido == null || this.apelido.trim().isEmpty()) {
-                this.apelido = "Anonimo_" + socket.getPort();
+            String linha = leitor.readLine();
+            if (linha == null || !linha.startsWith("GET")) {
+                return;
             }
 
-            // 2. Envia o historico de mensagens salvas no banco para o novo cliente
-            enviarHistorico();
+            String[] partes = linha.split(" ");
+            if (partes.length < 2) return;
+            String rota = partes[1];
 
-            // 3. Avisa a todos que este usuario entrou na sala
-            servidor.transmitirMensagemSistema(this.apelido + " entrou no chat!");
+            // 1. API: Buscar mensagens do MySQL
+            if (rota.equals("/api/mensagens")) {
+                List<Mensagem> mensagens = servidor.getRepositorio().buscarUltimas(50);
+                String json = converterParaJson(mensagens);
+                enviarRespostaHttp(saida, "application/json; charset=UTF-8", json.getBytes(StandardCharsets.UTF_8));
+                return;
+            }
 
-            // 4. Laco principal: fica ouvindo novas mensagens digitadas por esse cliente
-            String texto;
-            while ((texto = leitor.readLine()) != null) {
-                if (texto.equalsIgnoreCase("/sair")) {
-                    break;
-                }
-                // Cria a mensagem, salva no banco e faz o broadcast para todos
-                servidor.processarNovaMensagem(this.apelido, texto);
+            // 2. API: Enviar mensagem
+            if (rota.startsWith("/api/enviar")) {
+                processarEnvio(rota);
+                enviarRespostaHttp(saida, "application/json; charset=UTF-8", "{\"status\":\"ok\"}".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            // 3. Servir arquivos estáticos (HTML, CSS, JS)
+            String caminhoArquivo = rota.equals("/") ? "/index.html" : rota;
+            File arquivo = localizarArquivo(caminhoArquivo);
+
+            if (arquivo != null && arquivo.exists() && !arquivo.isDirectory()) {
+                String tipo = definirTipoConteudo(caminhoArquivo);
+                byte[] conteudo = Files.readAllBytes(arquivo.toPath());
+                enviarRespostaHttp(saida, tipo, conteudo);
+            } else {
+                enviarRespostaHttp(saida, "text/plain; charset=UTF-8", "Arquivo nao encontrado".getBytes(StandardCharsets.UTF_8));
             }
 
         } catch (IOException e) {
-            // Conexao perdida ou cliente fechou a janela abruptamente
-            System.out.println("Conexao com " + apelido + " foi encerrada.");
+            // Conexão finalizada normalmente
         } finally {
-            // Garante que o cliente seja removido da lista e os recursos sejam fechados
-            encerrarConexao();
+            try {
+                if (socket != null && !socket.isClosed()) socket.close();
+            } catch (IOException ignored) {}
         }
     }
 
-    // Envia o historico recente do MySQL apenas para este cliente que acabou de se conectar
-    private void enviarHistorico() {
-        List<Mensagem> ultimasMensagens = servidor.getRepositorio().buscarUltimas(10);
-        escritor.println("--- HISTORICO DE MENSAGENS RECENTES ---");
-        for (Mensagem msg : ultimasMensagens) {
-            escritor.println(msg.formatarParaExibicao());
+    private File localizarArquivo(String caminhoRelativo) {
+        String[] tentativas = {
+            "web" + caminhoRelativo,
+            "../web" + caminhoRelativo,
+            "../../web" + caminhoRelativo
+        };
+        for (String tentativa : tentativas) {
+            File f = new File(tentativa);
+            if (f.exists() && !f.isDirectory()) return f;
         }
-        escritor.println("----------------------------------------");
+        return null;
     }
 
-    // Metodo chamado pelo Servidor para entregar uma mensagem na tela deste cliente
-    public void enviarMensagem(String mensagemFormatada) {
-        if (escritor != null) {
-            escritor.println(mensagemFormatada);
-        }
-    }
-
-    // Fecha os canais e notifica o servidor que este cliente saiu
-    private void encerrarConexao() {
-        servidor.removerCliente(this);
-        if (apelido != null) {
-            servidor.transmitirMensagemSistema(this.apelido + " saiu do chat.");
-        }
+    private void processarEnvio(String rota) {
         try {
-            if (socket != null && !socket.isClosed()) {
-                socket.close();
+            if (!rota.contains("?")) return;
+
+            String query = rota.substring(rota.indexOf("?") + 1);
+            String remetente = "";
+            String conteudo = "";
+
+            for (String param : query.split("&")) {
+                String[] par = param.split("=", 2);
+                if (par.length == 2) {
+                    String chave = par[0];
+                    String valor = URLDecoder.decode(par[1], StandardCharsets.UTF_8);
+                    if (chave.equals("remetente")) remetente = valor;
+                    if (chave.equals("conteudo")) conteudo = valor;
+                }
             }
-        } catch (IOException e) {
-            System.err.println("Erro ao fechar o socket: " + e.getMessage());
+
+            if (!remetente.trim().isEmpty() && !conteudo.trim().isEmpty()) {
+                Mensagem msg = new Mensagem(remetente, conteudo);
+                servidor.getRepositorio().salvar(msg);
+                System.out.println("-> [MENSAGEM GRAVADA NO BANCO] " + remetente + ": " + conteudo);
+            }
+        } catch (Exception e) {
+            System.err.println("Erro ao processar envio: " + e.getMessage());
         }
     }
 
-    public String getApelido() {
-        return apelido;
+    private String converterParaJson(List<Mensagem> mensagens) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < mensagens.size(); i++) {
+            Mensagem m = mensagens.get(i);
+            String hora = m.getHorario() != null ? m.getHorario().format(HORA_FORMATO) : LocalDateTime.now().format(HORA_FORMATO);
+            sb.append("{")
+              .append("\"remetente\":\"").append(escaparTexto(m.getRemetente())).append("\",")
+              .append("\"conteudo\":\"").append(escaparTexto(m.getConteudo())).append("\",")
+              .append("\"horario\":\"").append(hora).append("\"")
+              .append("}");
+            if (i < mensagens.size() - 1) sb.append(",");
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
+    private String escaparTexto(String texto) {
+        if (texto == null) return "";
+        return texto.replace("\\", "\\\\")
+                    .replace("\"", "\\\"")
+                    .replace("\r", "")
+                    .replace("\n", " ");
+    }
+
+    private String definirTipoConteudo(String caminho) {
+        if (caminho.endsWith(".html")) return "text/html; charset=UTF-8";
+        if (caminho.endsWith(".css")) return "text/css; charset=UTF-8";
+        if (caminho.endsWith(".js")) return "application/javascript; charset=UTF-8";
+        return "application/octet-stream";
+    }
+
+    // Envio seguro em bytes diretos sem misturar streams
+    private void enviarRespostaHttp(OutputStream saida, String tipo, byte[] dados) throws IOException {
+        String cabecalho = "HTTP/1.1 200 OK\r\n"
+                + "Content-Type: " + tipo + "\r\n"
+                + "Content-Length: " + dados.length + "\r\n"
+                + "Access-Control-Allow-Origin: *\r\n"
+                + "Connection: close\r\n\r\n";
+
+        saida.write(cabecalho.getBytes(StandardCharsets.UTF_8));
+        saida.write(dados);
+        saida.flush();
     }
 }
