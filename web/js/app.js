@@ -1,6 +1,7 @@
 let meuNome = localStorage.getItem("chat_nome") || "";
 let meuTelefone = localStorage.getItem("chat_telefone") || "";
 let meuIdentificador = "";
+let conversaAtiva = "GERAL";
 
 const loginModal = document.getElementById("loginModal");
 const inputName = document.getElementById("inputName");
@@ -16,7 +17,27 @@ const messagesContainer = document.getElementById("messagesContainer");
 const inputMessage = document.getElementById("inputMessage");
 const btnSend = document.getElementById("btnSend");
 
-// 1. Inicializa o perfil
+// === MÁSCARA AUTOMÁTICA DE TELEFONE: (XX) XXXXX-XXXX ===
+function aplicarMascaraTelefone(input) {
+    input.addEventListener("input", (e) => {
+        let v = e.target.value.replace(/\D/g, ""); // Remove tudo que não for número
+        if (v.length > 11) v = v.substring(0, 11); // Limita a 11 dígitos
+
+        if (v.length > 6) {
+            v = `(${v.substring(0, 2)}) ${v.substring(2, 7)}-${v.substring(7)}`;
+        } else if (v.length > 2) {
+            v = `(${v.substring(0, 2)}) ${v.substring(2)}`;
+        } else if (v.length > 0) {
+            v = `(${v}`;
+        }
+        e.target.value = v;
+    });
+}
+
+// Ativa a máscara no campo de telefone do login
+if (inputPhone) aplicarMascaraTelefone(inputPhone);
+
+// Inicializa o perfil
 if (meuNome && meuTelefone) {
     atualizarPerfil(meuNome, meuTelefone);
     loginModal.style.display = "none";
@@ -48,24 +69,66 @@ function atualizarPerfil(nome, tel) {
     inputMessage.focus();
 }
 
-// 2. Adicionar novos contatos na lista
+// Adicionar novos contatos na lista
 btnAddContact.addEventListener("click", () => {
-    const num = prompt("Digite o número do contato (ex: 41 98888-0000):");
-    if (num && num.trim()) {
-        const item = document.createElement("div");
-        item.className = "contact-item";
-        item.innerHTML = `
-            <div class="avatar-chat">📞</div>
-            <div class="contact-info">
-                <h4>${num.trim()}</h4>
-                <p>Conversa direta</p>
-            </div>
-        `;
-        contactsList.appendChild(item);
+    const num = prompt("Digite o número do contato com DDD (ex: 41988887777):");
+    if (!num) return;
+
+    // Aplica o padrão (XX) XXXXX-XXXX
+    let limpo = num.replace(/\D/g, "");
+    if (limpo.length !== 11) {
+        alert("Número inválido! Digite os 11 dígitos com DDD (ex: 41999998888).");
+        return;
     }
+    const formatado = `(${limpo.substring(0, 2)}) ${limpo.substring(2, 7)}-${limpo.substring(7)}`;
+
+    // Impede adicionar a si mesmo
+    if (formatado === meuTelefone) {
+        alert("Você não pode adicionar seu próprio número!");
+        return;
+    }
+
+    adicionarContatoNaLista(formatado);
 });
 
-// 3. Enviar mensagem
+function adicionarContatoNaLista(numero) {
+    const item = document.createElement("div");
+    item.className = "contact-item";
+    item.dataset.destinatario = numero;
+    item.innerHTML = `
+        <div class="avatar-chat">📱</div>
+        <div class="contact-info">
+            <h4>${numero}</h4>
+            <p>Conversa Privada</p>
+        </div>
+    `;
+
+    item.addEventListener("click", () => selecionarConversa(numero, `📱 ${numero}`, item));
+    contactsList.appendChild(item);
+    selecionarConversa(numero, `📱 ${numero}`, item);
+}
+
+// Troca de conversa ao clicar no contato
+function selecionarConversa(destinatario, titulo, elemento) {
+    conversaAtiva = destinatario;
+    document.querySelectorAll(".contact-item").forEach(el => el.classList.remove("active"));
+    if (elemento) elemento.classList.add("active");
+
+    const headerTitle = document.querySelector(".chat-header h2");
+    if (headerTitle) headerTitle.textContent = titulo;
+
+    carregarMensagens(); // Recarrega filtrando a conversa escolhida
+}
+
+// Clique na Sala Geral original
+const salaGeralItem = document.querySelector(".contact-item");
+if (salaGeralItem) {
+    salaGeralItem.addEventListener("click", () => {
+        selecionarConversa("GERAL", "Sala Geral", salaGeralItem);
+    });
+}
+
+// Enviar mensagem
 btnSend.addEventListener("click", enviar);
 inputMessage.addEventListener("keypress", (e) => {
     if (e.key === "Enter") enviar();
@@ -83,7 +146,7 @@ async function enviar() {
     inputMessage.value = "";
 
     try {
-        const url = `/api/enviar?remetente=${encodeURIComponent(meuIdentificador)}&conteudo=${encodeURIComponent(texto)}`;
+        const url = `/api/enviar?remetente=${encodeURIComponent(meuIdentificador)}&destinatario=${encodeURIComponent(conversaAtiva)}&conteudo=${encodeURIComponent(texto)}`;
         await fetch(url);
         carregarMensagens();
     } catch (e) {
@@ -91,7 +154,7 @@ async function enviar() {
     }
 }
 
-// 4. Carregar mensagens salvas do MySQL
+// Carregar mensagens salvas do MySQL
 async function carregarMensagens() {
     try {
         const res = await fetch("/api/mensagens");
@@ -105,22 +168,23 @@ async function carregarMensagens() {
 function renderizarMensagens(mensagens) {
     messagesContainer.innerHTML = "";
 
-    mensagens.forEach(msg => {
-        const isMe = meuIdentificador && msg.remetente.includes(meuIdentificador);
+    // Filtra as mensagens de acordo com a conversa selecionada
+            const mensagensFiltradas = mensagens.filter(msg => {
+                const dest = msg.destinatario || "GERAL";
+                if (conversaAtiva === "GERAL") {
+                    return dest === "GERAL";
+                } else {
+                    // Conversa privada: exibe se eu mandei para ele OU se ele mandou para mim
+                    const enviadaPorMimParaEle = msg.remetente.includes(meuTelefone) && dest === conversaAtiva;
+                    const enviadaPorEleParaMim = msg.remetente.includes(conversaAtiva) && dest === meuTelefone;
+                    return enviadaPorMimParaEle || enviadaPorEleParaMim;
+                }
+            });
 
-        const row = document.createElement("div");
-        row.className = `message-row ${isMe ? "me" : "other"}`;
-
-        row.innerHTML = `
-            <div class="bubble">
-                <div class="bubble-sender">${msg.remetente}</div>
-                <div class="bubble-text">${msg.conteudo}</div>
-                <div class="bubble-time">${msg.horario}</div>
-            </div>
-        `;
-
-        messagesContainer.appendChild(row);
-    });
+            mensagensFiltradas.forEach(msg => {
+                const isMe = meuIdentificador && msg.remetente.includes(meuIdentificador);
+                adicionarBalaoNaTela(msg.remetente, msg.conteudo, msg.horario, isMe);
+            });
 
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }

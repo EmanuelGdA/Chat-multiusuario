@@ -91,6 +91,7 @@ public class ClienteHandler implements Runnable {
 
             String query = rota.substring(rota.indexOf("?") + 1);
             String remetente = "";
+            String destinatario = "GERAL";
             String conteudo = "";
 
             for (String param : query.split("&")) {
@@ -99,14 +100,16 @@ public class ClienteHandler implements Runnable {
                     String chave = par[0];
                     String valor = URLDecoder.decode(par[1], StandardCharsets.UTF_8);
                     if (chave.equals("remetente")) remetente = valor;
+                    if (chave.equals("destinatario")) destinatario = valor;
                     if (chave.equals("conteudo")) conteudo = valor;
                 }
             }
 
             if (!remetente.trim().isEmpty() && !conteudo.trim().isEmpty()) {
                 Mensagem msg = new Mensagem(remetente, conteudo);
+                msg.setDestinatario(destinatario);
                 servidor.getRepositorio().salvar(msg);
-                System.out.println("-> [MENSAGEM GRAVADA NO BANCO] " + remetente + ": " + conteudo);
+                System.out.println("-> [" + destinatario + "] " + remetente + ": " + conteudo);
             }
         } catch (Exception e) {
             System.err.println("Erro ao processar envio: " + e.getMessage());
@@ -120,6 +123,7 @@ public class ClienteHandler implements Runnable {
             String hora = m.getHorario() != null ? m.getHorario().format(HORA_FORMATO) : LocalDateTime.now().format(HORA_FORMATO);
             sb.append("{")
               .append("\"remetente\":\"").append(escaparTexto(m.getRemetente())).append("\",")
+              .append("\"destinatario\":\"").append(escaparTexto(m.getDestinatario())).append("\",")
               .append("\"conteudo\":\"").append(escaparTexto(m.getConteudo())).append("\",")
               .append("\"horario\":\"").append(hora).append("\"")
               .append("}");
