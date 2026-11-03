@@ -330,3 +330,79 @@ body {
         left: 0;
     }
 }
+
+/* Botão de Sair/Trocar Perfil */
+.btn-action-icon {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 50%;
+    transition: background 0.2s;
+}
+.btn-action-icon:hover {
+    background: #e2e8f0;
+}
+
+/* Botão de Limpar Conversa no Cabeçalho */
+.chat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.btn-clear-chat {
+    background: #fee2e2;
+    color: #ef4444;
+    border: 1px solid #fecaca;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.btn-clear-chat:hover {
+    background: #fecaca;
+}
+
+/* Botão de apagar mensagem individual (✕) dentro do balão */
+.bubble {
+    position: relative;
+    padding-right: 28px !important;
+}
+.btn-delete-msg {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 13px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s, color 0.2s;
+}
+.btn-delete-msg:hover {
+    opacity: 1;
+    color: #ef4444;
+}
+
+/* Botão de lixeira no contato lateral */
+.contact-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.btn-del-contact {
+    background: none;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    opacity: 0.4;
+    padding: 6px;
+    transition: opacity 0.2s;
+}
+.btn-del-contact:hover {
+    opacity: 1;
+}

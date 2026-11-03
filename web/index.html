@@ -19,7 +19,11 @@
                         <span id="myPhoneDisplay">Carregando...</span>
                     </div>
                 </div>
-                <button class="btn-add-contact" id="btnAddContact" title="Adicionar número">+</button>
+                <div>
+                    <!-- TROCAR PERFIL / SAIR -->
+                    <button class="btn-action-icon" id="btnResetProfile" title="Sair / Trocar meu número">🚪</button>
+                    <button class="btn-add-contact" id="btnAddContact" title="Adicionar número">+</button>
+                </div>
             </div>
 
             <div class="contacts-list" id="contactsList">
@@ -44,6 +48,8 @@
                         <span class="status-online">● Online</span>
                     </div>
                 </div>
+                <!-- LIMPAR CONVERSA ATUAL -->
+                <button class="btn-clear-chat" id="btnClearChat" title="Limpar mensagens desta conversa">🗑️ Limpar Conversa</button>
             </header>
 
             <section class="messages-container" id="messagesContainer">

@@ -55,4 +55,43 @@ public class MensagemRepository {
         Collections.reverse(historico);
         return historico;
     }
+
+    // Apaga uma mensagem individual do banco pelo ID
+    public void apagarMensagem(long id) {
+        String sql = "DELETE FROM mensagens WHERE id = ?";
+        try {
+            Connection conn = ConexaoFactory.getConexao();
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setLong(1, id);
+                stmt.executeUpdate();
+            }
+        } catch (SQLException e) {
+            System.err.println("Erro ao apagar mensagem: " + e.getMessage());
+        }
+    }
+
+    // Limpa todas as mensagens da conversa atual
+    public void limparConversa(String conversa, String meuNum) {
+        String sql;
+        if ("GERAL".equalsIgnoreCase(conversa)) {
+            sql = "DELETE FROM mensagens WHERE destinatario = 'GERAL' OR destinatario IS NULL";
+        } else {
+            sql = "DELETE FROM mensagens WHERE (remetente LIKE ? AND destinatario LIKE ?) OR (remetente LIKE ? AND destinatario LIKE ?)";
+        }
+
+        try {
+            Connection conn = ConexaoFactory.getConexao();
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                if (!"GERAL".equalsIgnoreCase(conversa)) {
+                    stmt.setString(1, "%" + meuNum + "%");
+                    stmt.setString(2, "%" + conversa + "%");
+                    stmt.setString(3, "%" + conversa + "%");
+                    stmt.setString(4, "%" + meuNum + "%");
+                }
+                stmt.executeUpdate();
+            }
+        } catch (SQLException e) {
+            System.err.println("Erro ao limpar conversa: " + e.getMessage());
+        }
+    }
 }

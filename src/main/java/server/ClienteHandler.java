@@ -70,6 +70,33 @@ public class ClienteHandler implements Runnable {
                 if (socket != null && !socket.isClosed()) socket.close();
             } catch (IOException ignored) {}
         }
+
+        // Rota para apagar mensagem individual
+            if (rota.startsWith("/api/apagar-mensagem")) {
+                try {
+                    long id = Long.parseLong(rota.split("id=")[1].split("&")[0]);
+                    servidor.getRepositorio().apagarMensagem(id);
+                } catch (Exception ignored) {}
+                enviarRespostaHttp(saida, "application/json; charset=UTF-8", "{\"status\":\"ok\"}".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            // Rota para limpar conversa inteira
+            if (rota.startsWith("/api/limpar-conversa")) {
+                try {
+                    String query = rota.split("\\?")[1];
+                    String conversa = "GERAL";
+                    String usuario = "";
+                    for (String p : query.split("&")) {
+                        String[] kv = p.split("=", 2);
+                        if (kv[0].equals("conversa")) conversa = URLDecoder.decode(kv[1], StandardCharsets.UTF_8);
+                        if (kv[0].equals("usuario")) usuario = URLDecoder.decode(kv[1], StandardCharsets.UTF_8);
+                    }
+                    servidor.getRepositorio().limparConversa(conversa, usuario);
+                } catch (Exception ignored) {}
+                enviarRespostaHttp(saida, "application/json; charset=UTF-8", "{\"status\":\"ok\"}".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
     }
 
     private File localizarArquivo(String caminhoRelativo) {
@@ -122,6 +149,7 @@ public class ClienteHandler implements Runnable {
             Mensagem m = mensagens.get(i);
             String hora = m.getHorario() != null ? m.getHorario().format(HORA_FORMATO) : LocalDateTime.now().format(HORA_FORMATO);
             sb.append("{")
+              .append("\"id\":").append(m.getId() != null ? m.getId() : 0).append(",")
               .append("\"remetente\":\"").append(escaparTexto(m.getRemetente())).append("\",")
               .append("\"destinatario\":\"").append(escaparTexto(m.getDestinatario())).append("\",")
               .append("\"conteudo\":\"").append(escaparTexto(m.getConteudo())).append("\",")

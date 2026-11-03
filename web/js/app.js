@@ -58,6 +58,17 @@ btnEnter.addEventListener("click", () => {
     localStorage.setItem("chat_telefone", tel);
     atualizarPerfil(nome, tel);
     loginModal.style.display = "none";
+
+    // Botão para sair, limpar dados locais e cadastrar outro número
+const btnResetProfile = document.getElementById("btnResetProfile");
+if (btnResetProfile) {
+    btnResetProfile.addEventListener("click", () => {
+        if (confirm("Deseja sair deste perfil e criar ou usar outro número?")) {
+            localStorage.clear();
+            location.reload();
+        }
+    });
+}
 });
 
 function atualizarPerfil(nome, tel) {
@@ -96,12 +107,24 @@ function adicionarContatoNaLista(numero) {
     item.className = "contact-item";
     item.dataset.destinatario = numero;
     item.innerHTML = `
-        <div class="avatar-chat">📱</div>
-        <div class="contact-info">
-            <h4>${numero}</h4>
-            <p>Conversa Privada</p>
+        <div style="display:flex; align-items:center; gap:12px;">
+            <div class="avatar-chat">📱</div>
+            <div class="contact-info">
+                <h4>${formatarNumero(numero)}</h4>
+                <p>Conversa Privada</p>
+            </div>
         </div>
+        <button class="btn-del-contact" title="Remover contato">🗑️</button>
     `;
+
+    // Botão para remover contato da barra
+    const btnDel = item.querySelector(".btn-del-contact");
+    btnDel.addEventListener("click", (e) => {
+        e.stopPropagation(); // Evita abrir a conversa
+        if (confirm(`Remover o contato ${formatarNumero(numero)} da lista?`)) {
+            item.remove();
+            selecionarConversa("GERAL", "Sala Geral", document.querySelector(".contact-item"));
+        }
 
     item.addEventListener("click", () => selecionarConversa(numero, `📱 ${numero}`, item));
     contactsList.appendChild(item);
@@ -152,6 +175,19 @@ async function enviar() {
     } catch (e) {
         console.error("Erro ao enviar mensagem:", e);
     }
+}
+
+// Limpa o histórico de toda a conversa ativa
+const btnClearChat = document.getElementById("btnClearChat");
+if (btnClearChat) {
+    btnClearChat.addEventListener("click", async () => {
+        const nomeConversa = conversaAtiva === "GERAL" ? "Sala Geral" : "esta conversa privada";
+        if (confirm(`Tem certeza que deseja apagar todas as mensagens de ${nomeConversa}?`)) {
+            const meuNum = (meuTelefone || "").replace(/\D/g, "");
+            await fetch(`/api/limpar-conversa?conversa=${encodeURIComponent(conversaAtiva)}&usuario=${encodeURIComponent(meuNum)}`);
+            carregarMensagens();
+        }
+    });
 }
 
 // Carregar mensagens salvas do MySQL
@@ -216,7 +252,7 @@ function renderizarMensagens(mensagens) {
     mensagensFiltradas.forEach(msg => {
         const remNum = soDigitos(msg.remetente);
         const isMe = meuNum && remNum.includes(meuNum);
-        adicionarBalaoNaTela(msg.remetente, msg.conteudo, msg.horario, isMe);
+        adicionarBalaoNaTela(msg.remetente, msg.conteudo, msg.horario, isMe, msg.id);
     });
 
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -242,12 +278,16 @@ if (btnMenuToggle && sidebar) {
 }
 
 // === FUNÇÃO QUE CRIA E DESENHA O BALÃO NA TELA ===
-function adicionarBalaoNaTela(remetente, conteudo, horario, isMe) {
+function adicionarBalaoNaTela(remetente, conteudo, horario, isMe, idMsg = 0) {
     const row = document.createElement("div");
     row.className = `message-row ${isMe ? "me" : "other"}`;
 
+    // Mostra o botãozinho ✕ para apagar se for uma mensagem que você enviou
+    const btnApagar = isMe && idMsg ? `<button class="btn-delete-msg" onclick="apagarMensagem(${idMsg})" title="Apagar esta mensagem">✕</button>` : "";
+
     row.innerHTML = `
         <div class="bubble">
+            ${btnApagar}
             <div class="bubble-sender">${remetente}</div>
             <div class="bubble-text">${conteudo}</div>
             <div class="bubble-time">${horario}</div>
@@ -257,3 +297,11 @@ function adicionarBalaoNaTela(remetente, conteudo, horario, isMe) {
     messagesContainer.appendChild(row);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
+
+// Função para deletar uma mensagem específica no banco
+window.apagarMensagem = async function(id) {
+    if (confirm("Deseja excluir esta mensagem?")) {
+        await fetch(`/api/apagar-mensagem?id=${id}`);
+        carregarMensagens();
+    }
+};
