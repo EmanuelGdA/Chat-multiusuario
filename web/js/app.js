@@ -167,24 +167,57 @@ async function carregarMensagens() {
 
 function renderizarMensagens(mensagens) {
     messagesContainer.innerHTML = "";
+    
+    // Função para comparar só os números (ignora parênteses e traços)
+    const soDigitos = s => (s || "").replace(/\D/g, "");
+    const meuNum = soDigitos(meuTelefone);
+    const conversaNum = soDigitos(conversaAtiva);
 
-    // Filtra as mensagens de acordo com a conversa selecionada
-            const mensagensFiltradas = mensagens.filter(msg => {
-                const dest = msg.destinatario || "GERAL";
-                if (conversaAtiva === "GERAL") {
-                    return dest === "GERAL";
-                } else {
-                    // Conversa privada: exibe se eu mandei para ele OU se ele mandou para mim
-                    const enviadaPorMimParaEle = msg.remetente.includes(meuTelefone) && dest === conversaAtiva;
-                    const enviadaPorEleParaMim = msg.remetente.includes(conversaAtiva) && dest === meuTelefone;
-                    return enviadaPorMimParaEle || enviadaPorEleParaMim;
-                }
-            });
+    // 1. Se alguém mandar mensagem privada, a conversa aparece automaticamente na sua lista lateral
+    mensagens.forEach(msg => {
+        const destNum = soDigitos(msg.destinatario);
+        const remNum = soDigitos(msg.remetente);
 
-            mensagensFiltradas.forEach(msg => {
-                const isMe = meuIdentificador && msg.remetente.includes(meuIdentificador);
-                adicionarBalaoNaTela(msg.remetente, msg.conteudo, msg.horario, isMe);
-            });
+        if (destNum === meuNum && remNum && remNum !== meuNum) {
+            const jaExiste = Array.from(document.querySelectorAll(".contact-item"))
+                .some(el => soDigitos(el.dataset.destinatario) === remNum);
+
+            if (!jaExiste) {
+                const item = document.createElement("div");
+                item.className = "contact-item";
+                item.dataset.destinatario = remNum;
+                item.innerHTML = `
+                    <div class="avatar-chat">📱</div>
+                    <div class="contact-info">
+                        <h4>${msg.remetente}</h4>
+                        <p>Conversa Privada</p>
+                    </div>
+                `;
+                item.addEventListener("click", () => selecionarConversa(remNum, `📱 ${msg.remetente}`, item));
+                contactsList.appendChild(item);
+            }
+        }
+    });
+
+    // 2. Filtra para exibir apenas mensagens da conversa aberta no momento
+    const mensagensFiltradas = mensagens.filter(msg => {
+        const destNum = soDigitos(msg.destinatario);
+        const remNum = soDigitos(msg.remetente);
+
+        if (conversaAtiva === "GERAL") {
+            return !msg.destinatario || msg.destinatario === "GERAL";
+        } else {
+            const enviadaPorMim = remNum.includes(meuNum) && destNum === conversaNum;
+            const enviadaParaMim = remNum.includes(conversaNum) && destNum === meuNum;
+            return enviadaPorMim || enviadaParaMim;
+        }
+    });
+
+    mensagensFiltradas.forEach(msg => {
+        const remNum = soDigitos(msg.remetente);
+        const isMe = meuNum && remNum.includes(meuNum);
+        adicionarBalaoNaTela(msg.remetente, msg.conteudo, msg.horario, isMe);
+    });
 
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
