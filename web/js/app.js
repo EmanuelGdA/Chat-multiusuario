@@ -207,3 +207,20 @@ if (btnMenuToggle && sidebar) {
         sidebar.classList.remove("aberta");
     });
 }
+
+// === FUNÇÃO QUE CRIA E DESENHA O BALÃO NA TELA ===
+function adicionarBalaoNaTela(remetente, conteudo, horario, isMe) {
+    const row = document.createElement("div");
+    row.className = `message-row ${isMe ? "me" : "other"}`;
+
+    row.innerHTML = `
+        <div class="bubble">
+            <div class="bubble-sender">${remetente}</div>
+            <div class="bubble-text">${conteudo}</div>
+            <div class="bubble-time">${horario}</div>
+        </div>
+    `;
+
+    messagesContainer.appendChild(row);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
