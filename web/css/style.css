@@ -306,7 +306,7 @@ body {
 }
 
 /* Ajustes exclusivos para tela de CELULAR */
-@media (max-width: 768px) {
+@media (max-width: 700px) {
     body { padding: 0; }
     .chat-app-wrapper { height: 100vh; border-radius: 0; }
 
@@ -319,7 +319,7 @@ body {
         top: 0;
         left: -320px; /* Escondida na esquerda */
         width: 280px;
-        height: 50%;
+        height: 100%;
         z-index: 100;
         box-shadow: 4px 0 15px rgba(0, 0, 0, 0.2);
         transition: left 0.3s ease; /* Animação suave */
