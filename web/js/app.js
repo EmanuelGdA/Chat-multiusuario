@@ -59,7 +59,9 @@ btnEnter.addEventListener("click", () => {
     atualizarPerfil(nome, tel);
     loginModal.style.display = "none";
 
-    // Botão para sair, limpar dados locais e cadastrar outro número
+});
+
+// Botão para sair, limpar dados locais e cadastrar outro número
 const btnResetProfile = document.getElementById("btnResetProfile");
 if (btnResetProfile) {
     btnResetProfile.addEventListener("click", () => {
@@ -69,7 +71,6 @@ if (btnResetProfile) {
         }
     });
 }
-});
 
 function atualizarPerfil(nome, tel) {
     meuNome = nome;
@@ -110,7 +111,7 @@ function adicionarContatoNaLista(numero) {
         <div style="display:flex; align-items:center; gap:12px;">
             <div class="avatar-chat">📱</div>
             <div class="contact-info">
-                <h4>${formatarNumero(numero)}</h4>
+                <h4>${numero}</h4>
                 <p>Conversa Privada</p>
             </div>
         </div>
@@ -119,12 +120,15 @@ function adicionarContatoNaLista(numero) {
 
     // Botão para remover contato da barra
     const btnDel = item.querySelector(".btn-del-contact");
-    btnDel.addEventListener("click", (e) => {
-        e.stopPropagation(); // Evita abrir a conversa
-        if (confirm(`Remover o contato ${formatarNumero(numero)} da lista?`)) {
-            item.remove();
-            selecionarConversa("GERAL", "Sala Geral", document.querySelector(".contact-item"));
-        }
+    if (btnDel) {
+        btnDel.addEventListener("click", (e) => {
+            e.stopPropagation(); // Evita abrir a conversa
+            if (confirm(`Remover o contato ${numero} da lista?`)) {
+                item.remove();
+                selecionarConversa("GERAL", "Sala Geral", document.querySelector(".contact-item"));
+            }
+        }); // <-- Era esse "});" que estava faltando fechar!
+    }
 
     item.addEventListener("click", () => selecionarConversa(numero, `📱 ${numero}`, item));
     contactsList.appendChild(item);
