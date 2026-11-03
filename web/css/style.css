@@ -317,8 +317,8 @@ body {
     .sidebar {
         position: fixed;
         top: 0;
-        left: -32px; /* Escondida na esquerda */
-        width: 270px;
+        left: -320px; /* Escondida na esquerda */
+        width: 250px;
         height: 100%;
         z-index: 100;
         box-shadow: 4px 0 15px rgba(0, 0, 0, 0.2);
