@@ -36,7 +36,7 @@ public class ClienteHandler implements Runnable {
             if (partes.length < 2) return;
             String rota = partes[1];
 
-            // 1. API: Buscar mensagens do MySQL
+            //  API: Buscar mensagens do MySQL
             if (rota.equals("/api/mensagens")) {
                 List<Mensagem> mensagens = servidor.getRepositorio().buscarUltimas(50);
                 String json = converterParaJson(mensagens);
@@ -44,21 +44,46 @@ public class ClienteHandler implements Runnable {
                 return;
             }
 
-            // 2. API: Enviar mensagem
+            //  API: Enviar mensagem
             if (rota.startsWith("/api/enviar")) {
                 processarEnvio(rota);
                 enviarRespostaHttp(saida, "application/json; charset=UTF-8", "{\"status\":\"ok\"}".getBytes(StandardCharsets.UTF_8));
                 return;
             }
 
-            // 2. API: Enviar mensagem
-            if (rota.startsWith("/api/enviar")) {
-                processarEnvio(rota);
+            // Rota para cadastrar quem acabou de fazer login
+            if (rota.startsWith("/api/registrar-usuario")) {
+                try {
+                    String query = rota.split("\\?")[1];
+                    String nome = "";
+                    String tel = "";
+                    for (String p : query.split("&")) {
+                        String[] kv = p.split("=", 2);
+                        if (kv[0].equals("nome")) nome = URLDecoder.decode(kv[1], StandardCharsets.UTF_8);
+                        if (kv[0].equals("telefone")) tel = URLDecoder.decode(kv[1], StandardCharsets.UTF_8);
+                    }
+                    if (!tel.isEmpty()) servidor.getRepositorio().registrarUsuario(nome, tel);
+                } catch (Exception ignored) {}
                 enviarRespostaHttp(saida, "application/json; charset=UTF-8", "{\"status\":\"ok\"}".getBytes(StandardCharsets.UTF_8));
                 return;
             }
 
-            // 3. Rota para apagar mensagem individual
+            // Rota para checar se o número que você quer adicionar já existe
+            if (rota.startsWith("/api/verificar-numero")) {
+                String tel = "";
+                if (rota.contains("telefone=")) {
+                    tel = URLDecoder.decode(rota.split("telefone=")[1].split("&")[0], StandardCharsets.UTF_8);
+                }
+                String nomeEncontrado = servidor.getRepositorio().buscarNomePorTelefone(tel);
+                String respostaJson = (nomeEncontrado != null) 
+                        ? "{\"existe\":true,\"nome\":\"" + escaparTexto(nomeEncontrado) + "\"}" 
+                        : "{\"existe\":false}";
+
+                enviarRespostaHttp(saida, "application/json; charset=UTF-8", respostaJson.getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            //  Rota para apagar mensagem individual
             if (rota.startsWith("/api/apagar-mensagem")) {
                 try {
                     long id = Long.parseLong(rota.split("id=")[1].split("&")[0]);
@@ -68,7 +93,7 @@ public class ClienteHandler implements Runnable {
                 return;
             }
 
-            // 4. Rota para limpar conversa inteira
+            // Rota para limpar conversa inteira
             if (rota.startsWith("/api/limpar-conversa")) {
                 try {
                     String query = rota.split("\\?")[1];
@@ -85,7 +110,7 @@ public class ClienteHandler implements Runnable {
                 return;
             }
 
-            // 3. Servir arquivos estáticos (HTML, CSS, JS)
+            // Servir arquivos estáticos (HTML, CSS, JS)
             String caminhoArquivo = rota.equals("/") ? "/index.html" : rota;
             File arquivo = localizarArquivo(caminhoArquivo);
 

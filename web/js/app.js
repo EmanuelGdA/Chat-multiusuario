@@ -24,6 +24,7 @@ function soDigitos(str) {
     return (str || "").replace(/\D/g, "");
 }
 
+
 // === MÁSCARA AUTOMÁTICA DE TELEFONE: (XX) XXXXX-XXXX ===
 function aplicarMascaraTelefone(input) {
     input.addEventListener("input", (e) => {
@@ -80,6 +81,10 @@ if (btnResetProfile) {
 }
 
 function atualizarPerfil(nome, tel) {
+
+    // Registra esse número no banco de dados para os outros poderem adicionar você
+    fetch(`/api/registrar-usuario?nome=${encodeURIComponent(nome)}&telefone=${encodeURIComponent(tel)}`);
+
     meuNome = nome;
     meuTelefone = tel;
     meuIdentificador = `${nome} (${tel})`;
@@ -88,8 +93,8 @@ function atualizarPerfil(nome, tel) {
     inputMessage.focus();
 }
 
-// Adicionar novos contatos na lista
-btnAddContact.addEventListener("click", () => {
+// Adicionar novos contatos na lista (validando se o número existe no banco)
+btnAddContact.addEventListener("click", async () => {
     const num = prompt("Digite o número do contato com DDD (ex: 41988887777):");
     if (!num) return;
 
@@ -102,15 +107,30 @@ btnAddContact.addEventListener("click", () => {
     const formatado = `(${limpo.substring(0, 2)}) ${limpo.substring(2, 7)}-${limpo.substring(7)}`;
 
     // Impede adicionar a si mesmo
-    if (formatado === meuTelefone) {
+    if (soDigitos(formatado) === soDigitos(meuTelefone)) {
         alert("Você não pode adicionar seu próprio número!");
         return;
     }
 
-    contatosOcultos = contatosOcultos.filter(n => n !== limpo);
-    localStorage.setItem("contatos_ocultos", JSON.stringify(contatosOcultos));
+    // Consulta o banco para checar se o número já existe
+    try {
+        const res = await fetch(`/api/verificar-numero?telefone=${encodeURIComponent(limpo)}`);
+        const dados = await res.json();
 
-    adicionarContatoNaLista(formatado);
+        if (!dados.existe) {
+            alert(`O número ${formatado} ainda não possui cadastro no ConnectChat!\nPeça para a pessoa entrar no link primeiro.`);
+            return;
+        }
+
+        // Se existe, desbloqueia e adiciona na lista
+        contatosOcultos = contatosOcultos.filter(n => n !== limpo);
+        localStorage.setItem("contatos_ocultos", JSON.stringify(contatosOcultos));
+
+        adicionarContatoNaLista(formatado);
+
+    } catch (e) {
+        alert("Erro ao verificar o número no servidor.");
+    }
 });
 
 function adicionarContatoNaLista(numero) {

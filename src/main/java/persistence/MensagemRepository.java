@@ -94,4 +94,43 @@ public class MensagemRepository {
             System.err.println("Erro ao limpar conversa: " + e.getMessage());
         }
     }
+
+    // Salva ou atualiza o cadastro do usuário pelo número puro
+    public void registrarUsuario(String nome, String telefone) {
+        String telLimpo = telefone.replaceAll("[^0-9]", "");
+        String sql = "INSERT INTO usuarios (telefone, nome) VALUES (?, ?) ON DUPLICATE KEY UPDATE nome = ?";
+
+        try {
+            Connection conn = ConexaoFactory.getConexao();
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setString(1, telLimpo);
+                stmt.setString(2, nome);
+                stmt.setString(3, nome);
+                stmt.executeUpdate();
+            }
+        } catch (SQLException e) {
+            System.err.println("Erro ao registrar usuario: " + e.getMessage());
+        }
+    }
+
+    // Busca um usuário cadastrado pelo telefone
+    public String buscarNomePorTelefone(String telefone) {
+        String telLimpo = telefone.replaceAll("[^0-9]", "");
+        String sql = "SELECT nome FROM usuarios WHERE telefone = ?";
+
+        try {
+            Connection conn = ConexaoFactory.getConexao();
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setString(1, telLimpo);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (rs.next()) {
+                        return rs.getString("nome");
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Erro ao verificar usuario: " + e.getMessage());
+        }
+        return null; // Retorna null se o número não existir
+    }
 }
