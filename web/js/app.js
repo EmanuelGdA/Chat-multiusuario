@@ -2,6 +2,7 @@ let meuNome = localStorage.getItem("chat_nome") || "";
 let meuTelefone = localStorage.getItem("chat_telefone") || "";
 let meuIdentificador = "";
 let conversaAtiva = "GERAL";
+let contatosOcultos = JSON.parse(localStorage.getItem("contatos_ocultos") || "[]");
 let ultimasMensagensDaConversa = [];
 
 const loginModal = document.getElementById("loginModal");
@@ -101,6 +102,9 @@ btnAddContact.addEventListener("click", () => {
         return;
     }
 
+    contatosOcultos = contatosOcultos.filter(n => n !== limpo);
+    localStorage.setItem("contatos_ocultos", JSON.stringify(contatosOcultos));
+
     adicionarContatoNaLista(formatado);
 });
 
@@ -122,13 +126,27 @@ function adicionarContatoNaLista(numero) {
     // Botão para remover contato da barra
     const btnDel = item.querySelector(".btn-del-contact");
     if (btnDel) {
-        btnDel.addEventListener("click", (e) => {
-            e.stopPropagation(); // Evita abrir a conversa
-            if (confirm(`Remover o contato ${numero} da lista?`)) {
+        btnDel.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            if (confirm(`Deseja remover o contato ${numero} e apagar as mensagens dele?`)) {
+                const numLimpo = soDigitos(numero);
+
+                // 1. Salva na lista de apagados para o chat não ressuscitar ele
+                if (!contatosOcultos.includes(numLimpo)) {
+                    contatosOcultos.push(numLimpo);
+                    localStorage.setItem("contatos_ocultos", JSON.stringify(contatosOcultos));
+                }
+
+                // 2. Apaga as mensagens dele no banco
+                const promises = ultimasMensagensDaConversa.map(m => fetch(`/api/apagar-mensagem?id=${m.id}`));
+                await Promise.all(promises);
+
+                // 3. Remove da tela e volta para a Sala Geral
                 item.remove();
                 selecionarConversa("GERAL", "Sala Geral", document.querySelector(".contact-item"));
+                carregarMensagens();
             }
-        }); // <-- Era esse "});" que estava faltando fechar!
+        });
     }
 
     item.addEventListener("click", () => selecionarConversa(numero, `📱 ${numero}`, item));
@@ -227,8 +245,12 @@ function renderizarMensagens(mensagens) {
 
     // 1. Detecta mensagens recebidas e adiciona contato na lateral se não existir
     mensagens.forEach(msg => {
+        
         const destNum = soDigitos(msg.destinatario);
         const remNum = soDigitos(msg.remetente);
+        
+        // Se o contato for apagado, não ressuscita ele na lista
+        if (contatosOcultos.includes(remNum)) return;
 
         if (destNum === meuNum && remNum && remNum !== meuNum) {
             const jaExiste = Array.from(document.querySelectorAll(".contact-item"))
