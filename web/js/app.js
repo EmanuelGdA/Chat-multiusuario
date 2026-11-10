@@ -19,6 +19,11 @@ const messagesContainer = document.getElementById("messagesContainer");
 const inputMessage = document.getElementById("inputMessage");
 const btnSend = document.getElementById("btnSend");
 
+// Remove tudo que não for número (acessível em todo o arquivo)
+function soDigitos(str) {
+    return (str || "").replace(/\D/g, "");
+}
+
 // === MÁSCARA AUTOMÁTICA DE TELEFONE: (XX) XXXXX-XXXX ===
 function aplicarMascaraTelefone(input) {
     input.addEventListener("input", (e) => {
