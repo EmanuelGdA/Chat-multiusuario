@@ -290,7 +290,10 @@ async function carregarMensagens() {
 }
 
 function renderizarMensagens(mensagens) {
-  // Toca o "ding" se chegou mensagem nova de outra pessoa
+  // 1. PRIMEIRO cria a função soDigitos:
+  const soDigitos = (s) => (s || "").replace(/\D/g, "");
+
+  // 2. DEPOIS verifica o som usando ela:
   if (mensagens.length > totalMensagensAnterior && totalMensagensAnterior > 0) {
     const ultima = mensagens[mensagens.length - 1];
     if (ultima && !ultima.remetente.includes(soDigitos(meuTelefone))) {
@@ -300,7 +303,6 @@ function renderizarMensagens(mensagens) {
   totalMensagensAnterior = mensagens.length;
   messagesContainer.innerHTML = "";
 
-  const soDigitos = (s) => (s || "").replace(/\D/g, "");
   const meuNum = soDigitos(meuTelefone);
   const conversaNum = soDigitos(conversaAtiva);
 
@@ -353,7 +355,7 @@ function renderizarMensagens(mensagens) {
     }
   });
 
-  // A linha correta fica AQUI (logo após a criação do mensagensFiltradas):
+  // Guarda as mensagens ativas da tela
   ultimasMensagensDaConversa = mensagensFiltradas;
 
   // 3. Renderiza os balões na tela
