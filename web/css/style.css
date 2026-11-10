@@ -406,3 +406,107 @@ body {
 .btn-del-contact:hover {
     opacity: 1;
 }
+/* ========================================================
+   ESTILOS: BARRA DE EMOJIS E BOTÃO DE TEMA
+   ======================================================== */
+.btn-theme-toggle {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 50%;
+    transition: transform 0.2s, background 0.2s;
+}
+.btn-theme-toggle:hover {
+    transform: scale(1.15);
+    background: #e2e8f0;
+}
+
+.emoji-bar {
+    display: flex;
+    gap: 12px;
+    padding: 6px 18px;
+    background-color: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    overflow-x: auto;
+}
+.emoji-btn {
+    font-size: 20px;
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.15s;
+}
+.emoji-btn:hover {
+    transform: scale(1.3);
+}
+
+/* ========================================================
+   MODO ESCURO / DARK MODE (🌙)
+   ======================================================== */
+body.dark-mode {
+    background-color: #030712;
+}
+
+body.dark-mode .chat-app-wrapper {
+    background-color: #111827;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+body.dark-mode .sidebar {
+    background-color: #111827;
+    border-right-color: #1f2937;
+}
+
+body.dark-mode .sidebar-header,
+body.dark-mode .chat-header,
+body.dark-mode .chat-input-bar,
+body.dark-mode .emoji-bar {
+    background-color: #1f2937;
+    border-color: #374151;
+}
+
+body.dark-mode .my-info h3,
+body.dark-mode .chat-header h2,
+body.dark-mode .contact-info h4 {
+    color: #f9fafb;
+}
+
+body.dark-mode .my-info span,
+body.dark-mode .contact-info p {
+    color: #9ca3af;
+}
+
+body.dark-mode .contact-item {
+    border-bottom-color: #1f2937;
+}
+body.dark-mode .contact-item:hover,
+body.dark-mode .contact-item.active {
+    background-color: #374151;
+}
+
+body.dark-mode .chat-panel,
+body.dark-mode .messages-container {
+    background-color: #0b0f19;
+}
+
+body.dark-mode .message-row.other .bubble {
+    background-color: #1f2937;
+    color: #f3f4f6;
+    border-color: #374151;
+}
+
+body.dark-mode .message-row.me .bubble {
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+body.dark-mode .chat-input-bar input {
+    background-color: #111827;
+    color: #f9fafb;
+    border-color: #374151;
+}
+
+body.dark-mode .btn-theme-toggle:hover {
+    background-color: #374151;
+}
