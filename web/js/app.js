@@ -6,6 +6,7 @@ let contatosOcultos = JSON.parse(
   localStorage.getItem("contatos_ocultos") || "[]",
 );
 let ultimasMensagensDaConversa = [];
+let totalMensagensAnterior = 0;
 
 const loginModal = document.getElementById("loginModal");
 const inputName = document.getElementById("inputName");
