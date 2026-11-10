@@ -2,6 +2,7 @@ let meuNome = localStorage.getItem("chat_nome") || "";
 let meuTelefone = localStorage.getItem("chat_telefone") || "";
 let meuIdentificador = "";
 let conversaAtiva = "GERAL";
+let ultimasMensagensDaConversa = [];
 
 const loginModal = document.getElementById("loginModal");
 const inputName = document.getElementById("inputName");
@@ -181,14 +182,26 @@ async function enviar() {
     }
 }
 
-// Limpa o histórico de toda a conversa ativa
+
+// Limpa o histórico da conversa atual (Geral ou Privada)
 const btnClearChat = document.getElementById("btnClearChat");
 if (btnClearChat) {
     btnClearChat.addEventListener("click", async () => {
         const nomeConversa = conversaAtiva === "GERAL" ? "Sala Geral" : "esta conversa privada";
         if (confirm(`Tem certeza que deseja apagar todas as mensagens de ${nomeConversa}?`)) {
-            const meuNum = (meuTelefone || "").replace(/\D/g, "");
-            await fetch(`/api/limpar-conversa?conversa=${encodeURIComponent(conversaAtiva)}&usuario=${encodeURIComponent(meuNum)}`);
+            // Esvazia a tela imediatamente
+            messagesContainer.innerHTML = "";
+            cacheHistorico = "";
+
+            if (conversaAtiva === "GERAL") {
+                // Na Sala Geral apaga tudo que é geral
+                await fetch(`/api/limpar-conversa?conversa=GERAL`);
+            } else {
+                // Na Privada, apaga direto pelo ID de cada mensagem da conversa
+                const promises = ultimasMensagensDaConversa.map(m => fetch(`/api/apagar-mensagem?id=${m.id}`));
+                await Promise.all(promises);
+            }
+
             carregarMensagens();
         }
     });
@@ -206,6 +219,7 @@ async function carregarMensagens() {
 }
 
 function renderizarMensagens(mensagens) {
+    ultimasMensagensDaConversa = mensagensFiltradas;
     messagesContainer.innerHTML = "";
     
     // Função para comparar só os números (ignora parênteses e traços)
