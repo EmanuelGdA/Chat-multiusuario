@@ -219,15 +219,13 @@ async function carregarMensagens() {
 }
 
 function renderizarMensagens(mensagens) {
-    ultimasMensagensDaConversa = mensagensFiltradas;
     messagesContainer.innerHTML = "";
     
-    // Função para comparar só os números (ignora parênteses e traços)
     const soDigitos = s => (s || "").replace(/\D/g, "");
     const meuNum = soDigitos(meuTelefone);
     const conversaNum = soDigitos(conversaAtiva);
 
-    // 1. Se alguém mandar mensagem privada, a conversa aparece automaticamente na sua lista lateral
+    // 1. Detecta mensagens recebidas e adiciona contato na lateral se não existir
     mensagens.forEach(msg => {
         const destNum = soDigitos(msg.destinatario);
         const remNum = soDigitos(msg.remetente);
@@ -241,11 +239,14 @@ function renderizarMensagens(mensagens) {
                 item.className = "contact-item";
                 item.dataset.destinatario = remNum;
                 item.innerHTML = `
-                    <div class="avatar-chat">📱</div>
-                    <div class="contact-info">
-                        <h4>${msg.remetente}</h4>
-                        <p>Conversa Privada</p>
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <div class="avatar-chat">📱</div>
+                        <div class="contact-info">
+                            <h4>${msg.remetente}</h4>
+                            <p>Conversa Privada</p>
+                        </div>
                     </div>
+                    <button class="btn-del-contact" title="Remover contato">🗑️</button>
                 `;
                 item.addEventListener("click", () => selecionarConversa(remNum, `📱 ${msg.remetente}`, item));
                 contactsList.appendChild(item);
@@ -253,7 +254,7 @@ function renderizarMensagens(mensagens) {
         }
     });
 
-    // 2. Filtra para exibir apenas mensagens da conversa aberta no momento
+    // 2. Filtra as mensagens pertencentes à conversa atual
     const mensagensFiltradas = mensagens.filter(msg => {
         const destNum = soDigitos(msg.destinatario);
         const remNum = soDigitos(msg.remetente);
@@ -267,6 +268,10 @@ function renderizarMensagens(mensagens) {
         }
     });
 
+    // A linha correta fica AQUI (logo após a criação do mensagensFiltradas):
+    ultimasMensagensDaConversa = mensagensFiltradas;
+
+    // 3. Renderiza os balões na tela
     mensagensFiltradas.forEach(msg => {
         const remNum = soDigitos(msg.remetente);
         const isMe = meuNum && remNum.includes(meuNum);
