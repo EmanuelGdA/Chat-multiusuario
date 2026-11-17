@@ -13,6 +13,40 @@ const inputName = document.getElementById("inputName");
 const inputPhone = document.getElementById("inputPhone");
 const btnEnter = document.getElementById("btnEnter");
 
+const btnMyProfile = document.getElementById("btnMyProfile");
+const myAvatar = document.getElementById("myAvatar");
+const profileDialog = document.getElementById("profileDialog");
+const profileForm = document.getElementById("profileForm");
+const profileAvatar = document.getElementById("profileAvatar");
+const profileBio = document.getElementById("profileBio");
+
+btnMyProfile.addEventListener("click", () => {
+  document.getElementById("profileName").textContent = meuNome;
+  document.getElementById("profilePhone").textContent = meuTelefone;
+  profileAvatar.value = localStorage.getItem("chat_profile_avatar") || "initials";
+  profileBio.value = localStorage.getItem("chat_profile_bio") || "";
+  profileDialog.showModal();
+});
+
+document.getElementById("btnCloseProfile").addEventListener("click", () => {
+  profileDialog.close();
+});
+
+profileForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  localStorage.setItem("chat_profile_avatar", profileAvatar.value);
+  localStorage.setItem("chat_profile_bio", profileBio.value.trim());
+  atualizarAvatar();
+  profileDialog.close();
+});
+
+function atualizarAvatar() {
+  const avatar = localStorage.getItem("chat_profile_avatar");
+  const iniciais = meuNome.split(/\s+/).slice(0, 2)
+    .map((parte) => Array.from(parte)[0]).join("").toLocaleUpperCase("pt-BR");
+  myAvatar.textContent = avatar && avatar !== "initials" ? avatar : iniciais;
+}
+
 const myNameDisplay = document.getElementById("myNameDisplay");
 const myPhoneDisplay = document.getElementById("myPhoneDisplay");
 const btnAddContact = document.getElementById("btnAddContact");
@@ -92,6 +126,8 @@ function atualizarPerfil(nome, tel) {
   meuIdentificador = `${nome} (${tel})`;
   myNameDisplay.textContent = nome;
   myPhoneDisplay.textContent = tel;
+  atualizarAvatar();
+  btnMyProfile.disabled = false;
   inputMessage.focus();
 }
 
