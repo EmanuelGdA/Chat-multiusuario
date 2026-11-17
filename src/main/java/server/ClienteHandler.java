@@ -8,7 +8,6 @@ import java.net.Socket;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.sql.SQLException;
@@ -313,7 +312,7 @@ public class ClienteHandler implements Runnable {
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < mensagens.size(); i++) {
             Mensagem m = mensagens.get(i);
-            String hora = m.getHorario() != null ? m.getHorario().format(HORA_FORMATO) : LocalDateTime.now().format(HORA_FORMATO);
+            String hora = m.getHorario().format(HORA_FORMATO);
             sb.append("{")
               .append("\"id\":").append(m.getId() != null ? m.getId() : 0).append(",")
               .append("\"remetente\":\"").append(escaparTexto(m.getRemetente())).append("\",")

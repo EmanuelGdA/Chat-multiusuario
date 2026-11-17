@@ -1,9 +1,12 @@
 package model;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
 public class Mensagem {
+    private static final ZoneId FUSO_CHAT = ZoneId.of("America/Sao_Paulo");
+
     private Long id;
     private String remetente;
     private String destinatario;
@@ -17,7 +20,7 @@ public class Mensagem {
     public Mensagem(Long id, String remetente, String conteudo, LocalDateTime horario) {
         this(remetente, conteudo);
         this.id = id;
-        this.horario = (horario != null) ? horario : LocalDateTime.now();
+        if (horario != null) this.horario = horario;
     }
 
     // Construtor: Usado para novas mensagens digitadas no chat (gera o horario atual)
@@ -30,7 +33,7 @@ public class Mensagem {
         }
         this.remetente = remetente.trim();
         this.conteudo = conteudo.trim();
-        this.horario = LocalDateTime.now();
+        this.horario = LocalDateTime.now(FUSO_CHAT);
     }
 
     public Long getId() {
@@ -59,7 +62,7 @@ public class Mensagem {
         this(remetente, conteudo);
         this.id = id;
         this.destinatario = (destinatario != null && !destinatario.trim().isEmpty()) ? destinatario.trim() : "GERAL";
-        this.horario = (horario != null) ? horario : LocalDateTime.now();
+        if (horario != null) this.horario = horario;
     }
 
     public String getDestinatario() {

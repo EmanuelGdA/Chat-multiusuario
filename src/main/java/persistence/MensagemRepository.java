@@ -87,7 +87,7 @@ public class MensagemRepository {
             stmt.setString(1, mensagem.getRemetente());
             stmt.setString(2, mensagem.getDestinatario());
             stmt.setString(3, mensagem.getConteudo());
-            stmt.setTimestamp(4, Timestamp.valueOf(mensagem.getHorario()));
+            stmt.setObject(4, mensagem.getHorario());
             stmt.executeUpdate();
         }
     }
@@ -105,7 +105,7 @@ public class MensagemRepository {
                     String remetente = rs.getString("remetente");
                     String destinatario = rs.getString("destinatario");
                     String conteudo = rs.getString("conteudo");
-                    LocalDateTime horario = rs.getTimestamp("horario").toLocalDateTime();
+                    LocalDateTime horario = rs.getObject("horario", LocalDateTime.class);
 
                     historico.add(new Mensagem(id, remetente, destinatario, conteudo, horario));
                 }
