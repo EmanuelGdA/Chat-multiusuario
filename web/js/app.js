@@ -67,7 +67,7 @@ async function abrirPerfilContato(telefone, nome) {
   document.getElementById("contactProfilePhone").textContent = telefone;
   contactNameForm.dataset.telefone = telefone;
   contactNameForm.hidden = !encontrarContato(telefone);
-  contactLocalName.value = contatosSalvos.get(telefone)?.apelido || "";
+  contactLocalName.value = lerContatoSalvo(telefone)?.apelido || "";
   contactNameStatus.textContent = "";
   avatar.textContent = textoAvatar(nome || "");
   bio.textContent = "Carregando perfil…";
@@ -386,7 +386,7 @@ function atualizarPerfil(nome, tel) {
 
   meuNome = nome;
   meuTelefone = tel;
-  contatosSalvos = new Map(JSON.parse(localStorage.getItem(chaveContatos()) || "[]"));
+  contatosSalvos = lerContatosSalvos();
   for (const [telefone, contato] of contatosSalvos) {
     if (!contatosOcultos.includes(telefone)) adicionarContatoNaLista(telefone, contato.nome);
   }
@@ -435,7 +435,7 @@ btnAddContact.addEventListener("click", async () => {
 
     const nomeCadastro = dados.nome || formatado;
     const apelido = prompt("Como você quer chamar este contato?",
-      contatosSalvos.get(limpo)?.apelido || nomeCadastro);
+      lerContatoSalvo(limpo)?.apelido || nomeCadastro);
     if (apelido === null) return;
 
     salvarContato(limpo, nomeCadastro, apelido.trim() === nomeCadastro ? "" : apelido);
@@ -453,13 +453,43 @@ function chaveContatos() {
   return `chat_contacts_${soDigitos(meuTelefone)}`;
 }
 
-function guardarContatos() {
-  localStorage.setItem(chaveContatos(), JSON.stringify([...contatosSalvos]));
+function lerListaAntiga() {
+  return new Map(JSON.parse(localStorage.getItem(chaveContatos()) || "[]"));
+}
+
+function lerContatosSalvos() {
+  const contatos = lerListaAntiga();
+  const prefixo = `${chaveContatos()}_`;
+  for (const chave of Object.keys(localStorage)) {
+    if (!chave.startsWith(prefixo)) continue;
+    const telefone = chave.slice(prefixo.length);
+    const contato = JSON.parse(localStorage.getItem(chave));
+    if (contato) contatos.set(telefone, contato);
+    else contatos.delete(telefone);
+  }
+  return contatos;
+}
+
+function lerContatoSalvo(telefone) {
+  const registro = localStorage.getItem(`${chaveContatos()}_${telefone}`);
+  return registro === null ? lerListaAntiga().get(telefone) : JSON.parse(registro);
 }
 
 function salvarContato(telefone, nome, apelido) {
-  contatosSalvos.set(telefone, { nome, apelido: apelido.trim().slice(0, 60) });
-  guardarContatos();
+  const contato = { nome, apelido: apelido.trim().slice(0, 60) };
+  localStorage.setItem(`${chaveContatos()}_${telefone}`, JSON.stringify(contato));
+  contatosSalvos.set(telefone, contato);
+}
+
+function removerContatoSalvo(telefone) {
+  const chave = `${chaveContatos()}_${telefone}`;
+  if (lerListaAntiga().has(telefone)) {
+    // Registra a remoção para que o contato antigo não volte a aparecer.
+    localStorage.setItem(chave, "null");
+  } else {
+    localStorage.removeItem(chave);
+  }
+  contatosSalvos.delete(telefone);
 }
 
 function encontrarContato(telefone) {
@@ -514,7 +544,7 @@ function adicionarContatoNaLista(numero, nome, selecionar = false) {
         )
       ) {
         const numLimpo = telefone;
-        if (contatosSalvos.delete(numLimpo)) guardarContatos();
+        removerContatoSalvo(numLimpo);
 
         // 1. Salva na lista de apagados para o chat não ressuscitar ele
         if (!contatosOcultos.includes(numLimpo)) {
