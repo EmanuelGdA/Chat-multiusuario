@@ -2,6 +2,7 @@ package server;
 
 import model.Mensagem;
 import persistence.MensagemRepository.Perfil;
+import persistence.MensagemRepository.Grupo;
 
 import java.io.*;
 import java.net.Socket;
@@ -12,6 +13,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.sql.SQLException;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -48,7 +50,16 @@ public class ClienteHandler implements Runnable {
                 atualizarPresenca(leitor, saida);
                 return;
             }
+            if ("POST".equals(metodo) && "/api/grupos".equals(rota)) {
+                criarGrupo(leitor, saida);
+                return;
+            }
             if (!"GET".equals(metodo)) return;
+
+            if (rota.startsWith("/api/grupos?")) {
+                carregarGrupos(rota.substring("/api/grupos?".length()), saida);
+                return;
+            }
 
             if (rota.startsWith("/api/perfil?")) {
                 buscarPerfil(rota.substring("/api/perfil?".length()), saida);
@@ -67,8 +78,11 @@ public class ClienteHandler implements Runnable {
 
             if (rota.equals("/api/enviar") || rota.startsWith("/api/enviar?")) {
                 try {
-                    processarEnvio(rota);
-                    responderJson(saida, "200 OK", "{\"status\":\"ok\"}");
+                    if (processarEnvio(rota)) {
+                        responderJson(saida, "200 OK", "{\"status\":\"ok\"}");
+                    } else {
+                        responderJson(saida, "403 Forbidden", "{\"status\":\"negado\"}");
+                    }
                 } catch (IllegalArgumentException e) {
                     responderJson(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
                 } catch (SQLException e) {
@@ -233,6 +247,52 @@ public class ClienteHandler implements Runnable {
         }
     }
 
+    private void criarGrupo(BufferedReader leitor, OutputStream saida) throws IOException {
+        try {
+            Map<String, String> campos = lerFormulario(leitor);
+            String nome = campos.getOrDefault("nome", "").strip();
+            String telefone = campos.getOrDefault("telefone", "");
+            Set<String> membros = new LinkedHashSet<>();
+            membros.add(telefone);
+            for (String contato : campos.getOrDefault("contatos", "").split(",", -1)) {
+                membros.add(contato);
+            }
+            if (nome.isBlank() || nome.length() > 60 || membros.size() < 2 || membros.size() > 31
+                    || membros.stream().anyMatch(numero -> !numero.matches("[0-9]{1,32}"))) {
+                throw new IllegalArgumentException("Dados do grupo inválidos.");
+            }
+
+            Grupo grupo = servidor.getRepositorio().criarGrupo(nome, membros);
+            responderJson(saida, "201 Created", grupoParaJson(grupo));
+        } catch (IllegalArgumentException e) {
+            responderJson(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+        } catch (SQLException e) {
+            responderBancoIndisponivel(saida, e);
+        }
+    }
+
+    private void carregarGrupos(String query, OutputStream saida) throws IOException {
+        try {
+            String telefone = lerParametros(query).getOrDefault("telefone", "");
+            if (!telefone.matches("[0-9]{1,32}")) throw new IllegalArgumentException("Telefone inválido.");
+            List<Grupo> grupos = servidor.getRepositorio().listarGrupos(telefone);
+            List<Mensagem> mensagens = grupos.isEmpty() ? List.of()
+                    : servidor.getRepositorio().buscarMensagensDeGrupos(telefone, 50);
+            String lista = String.join(",", grupos.stream().map(this::grupoParaJson).toList());
+            String json = "{\"grupos\":[" + lista + "],\"mensagens\":" + converterParaJson(mensagens) + "}";
+            responderJson(saida, "200 OK", json);
+        } catch (IllegalArgumentException e) {
+            responderJson(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+        } catch (SQLException e) {
+            responderBancoIndisponivel(saida, e);
+        }
+    }
+
+    private String grupoParaJson(Grupo grupo) {
+        return "{\"id\":\"G:" + grupo.id() + "\",\"nome\":\"" + escaparTexto(grupo.nome())
+                + "\",\"totalMembros\":" + grupo.totalMembros() + "}";
+    }
+
     private Map<String, String> lerFormulario(BufferedReader leitor) throws IOException {
         int tamanho = -1;
         String cabecalho;
@@ -293,14 +353,28 @@ public class ClienteHandler implements Runnable {
         return null;
     }
 
-    private void processarEnvio(String rota) throws SQLException {
+    private boolean processarEnvio(String rota) throws SQLException {
         int separador = rota.indexOf('?');
         if (separador < 0) throw new IllegalArgumentException("Envio sem parâmetros");
 
         Map<String, String> campos = lerParametros(rota.substring(separador + 1));
         Mensagem mensagem = new Mensagem(campos.get("remetente"), campos.get("conteudo"));
-        mensagem.setDestinatario(campos.getOrDefault("destinatario", "GERAL"));
+        String destinatario = campos.getOrDefault("destinatario", "GERAL");
+        if (destinatario.regionMatches(true, 0, "G:", 0, 2)) {
+            if (!destinatario.matches("G:[1-9][0-9]{0,18}")) {
+                throw new IllegalArgumentException("Grupo inválido.");
+            }
+            int inicioTelefone = mensagem.getRemetente().lastIndexOf(" (");
+            if (inicioTelefone < 0 || !mensagem.getRemetente().endsWith(")")) return false;
+            String telefone = mensagem.getRemetente().substring(inicioTelefone + 2,
+                    mensagem.getRemetente().length() - 1).replaceAll("[^0-9]", "");
+            if (!servidor.getRepositorio().participaDoGrupo(Long.parseLong(destinatario.substring(2)), telefone)) {
+                return false;
+            }
+        }
+        mensagem.setDestinatario(destinatario);
         servidor.getRepositorio().salvar(mensagem);
+        return true;
     }
 
     private void responderBancoIndisponivel(OutputStream saida, SQLException erro) throws IOException {

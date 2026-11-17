@@ -10,6 +10,7 @@ let maiorIdRecebido;
 let registroUsuario;
 let consultaMensagens;
 let mensagensCarregadas = [];
+let mensagensDeGrupos = [];
 let conversaRenderizada;
 let leitura;
 let contatosSalvos = new Map();
@@ -28,8 +29,12 @@ const searchNext = document.getElementById("searchNext");
 let resultadosBusca = [];
 let indiceBusca = -1;
 
+function ehGrupo(conversa) {
+  return /^G:[1-9][0-9]*$/.test(conversa);
+}
+
 function chaveConversa(conversa) {
-  return conversa === "GERAL" ? conversa : soDigitos(conversa);
+  return conversa === "GERAL" || ehGrupo(conversa) ? conversa : soDigitos(conversa);
 }
 
 function separarRemetente(remetente) {
@@ -195,6 +200,16 @@ const myNameDisplay = document.getElementById("myNameDisplay");
 const myPhoneDisplay = document.getElementById("myPhoneDisplay");
 const btnAddContact = document.getElementById("btnAddContact");
 const contactsList = document.getElementById("contactsList");
+const btnNewGroup = document.getElementById("btnNewGroup");
+const newGroupDialog = document.getElementById("newGroupDialog");
+const newGroupForm = document.getElementById("newGroupForm");
+const groupName = document.getElementById("groupName");
+const groupMembers = document.getElementById("groupMembers");
+const groupError = document.getElementById("groupError");
+const btnCancelGroup = document.getElementById("btnCancelGroup");
+const btnCreateGroup = newGroupForm.querySelector('[type="submit"]');
+const groupParticipants = document.getElementById("groupParticipants");
+const conversationAvatar = document.getElementById("conversationAvatar");
 
 const messagesContainer = document.getElementById("messagesContainer");
 const inputMessage = document.getElementById("inputMessage");
@@ -228,7 +243,7 @@ function sincronizarPresenca() {
   if (!meuIdentificador || !telefone) return;
 
   const ativa = chaveConversa(conversaAtiva);
-  const contato = ativa === "GERAL" ? "" : ativa;
+  const contato = ativa === "GERAL" || ehGrupo(ativa) ? "" : ativa;
   if (!navigator.onLine) {
     if (contato) mostrarPresenca("unavailable");
     return;
@@ -277,7 +292,7 @@ function pararDigitacao(notificar = true) {
 }
 
 function registrarDigitacao() {
-  if (conversaAtiva === "GERAL" || !inputMessage.value.trim()) {
+  if (conversaAtiva === "GERAL" || ehGrupo(conversaAtiva) || !inputMessage.value.trim()) {
     pararDigitacao();
     return;
   }
@@ -395,6 +410,7 @@ function atualizarPerfil(nome, tel) {
   myPhoneDisplay.textContent = tel;
   atualizarAvatar();
   btnMyProfile.disabled = false;
+  btnNewGroup.disabled = false;
   inputMessage.value = sessionStorage.getItem(chaveRascunho(conversaAtiva)) || "";
   if (!window.matchMedia("(max-width: 768px)").matches) inputMessage.focus();
   sincronizarPresenca();
@@ -583,6 +599,98 @@ function adicionarContatoNaLista(numero, nome, selecionar = false) {
   if (selecionar) selecionarConversa(numero, titulo.textContent, item);
 }
 
+btnNewGroup.addEventListener("click", () => {
+  groupName.value = "";
+  groupMembers.replaceChildren();
+  const contatos = Array.from(contactsList.querySelectorAll(".contact-item"))
+    .filter((item) => /^[0-9]+$/.test(item.dataset.destinatario));
+
+  for (const item of contatos) {
+    const escolha = document.createElement("input");
+    escolha.type = "checkbox";
+    escolha.value = item.dataset.destinatario;
+    const rotulo = document.createElement("label");
+    const texto = document.createElement("span");
+    texto.textContent = item.querySelector("h4").textContent;
+    rotulo.append(escolha, texto);
+    groupMembers.appendChild(rotulo);
+  }
+
+  groupError.textContent = contatos.length ? "" : "Adicione um contato antes de criar um grupo.";
+  btnCreateGroup.disabled = !contatos.length;
+  newGroupDialog.showModal();
+});
+
+btnCancelGroup.addEventListener("click", () => {
+  newGroupDialog.close();
+});
+
+newGroupDialog.addEventListener("cancel", (event) => {
+  if (btnCancelGroup.disabled) event.preventDefault();
+});
+
+newGroupForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (btnCreateGroup.disabled) return;
+  const nome = groupName.value.trim();
+  const contatos = Array.from(groupMembers.querySelectorAll("input:checked"), (input) => input.value);
+  if (!nome || contatos.length === 0 || contatos.length > 30) {
+    groupError.textContent = "Digite um nome e escolha de 1 a 30 contatos.";
+    return;
+  }
+
+  btnCreateGroup.disabled = true;
+  btnCancelGroup.disabled = true;
+  groupError.textContent = "Criando grupo…";
+  try {
+    await registroUsuario;
+    const resposta = await fetch("/api/grupos", {
+      method: "POST",
+      signal: AbortSignal.timeout(10000),
+      body: new URLSearchParams({ nome, telefone: soDigitos(meuTelefone), contatos: contatos.join(",") }),
+    });
+    if (resposta.status === 400) {
+      groupError.textContent = "Confira se todos os contatos escolhidos têm cadastro no chat.";
+      return;
+    }
+    if (!resposta.ok) throw new Error("Grupo sem confirmação");
+    const grupo = await resposta.json();
+    const item = adicionarGrupoNaLista(grupo);
+    if (newGroupDialog.open) {
+      newGroupDialog.close();
+      selecionarConversa(grupo.id, grupo.nome, item);
+    }
+  } catch {
+    groupError.textContent = "Não foi possível confirmar a criação. Confira a lista de conversas.";
+  } finally {
+    btnCreateGroup.disabled = false;
+    btnCancelGroup.disabled = false;
+  }
+});
+
+function adicionarGrupoNaLista(grupo) {
+  const existente = contactsList.querySelector(`[data-destinatario="${grupo.id}"]`);
+  if (existente) return existente;
+
+  const item = document.createElement("div");
+  item.className = "contact-item";
+  item.dataset.destinatario = grupo.id;
+  item.dataset.totalMembros = grupo.totalMembros;
+  item.innerHTML = `
+    <div class="avatar-chat" aria-hidden="true">👥</div>
+    <div class="contact-info">
+      <div class="contact-heading"><h4></h4><time class="contact-time" hidden></time></div>
+      <p class="contact-preview"></p>
+    </div>
+    <span class="unread-badge" hidden></span>
+  `;
+  item.querySelector("h4").textContent = grupo.nome;
+  item.querySelector(".contact-preview").textContent = `${grupo.totalMembros} participantes`;
+  item.addEventListener("click", () => selecionarConversa(grupo.id, grupo.nome, item));
+  contactsList.appendChild(item);
+  return item;
+}
+
 // Troca de conversa ao clicar no contato
 function selecionarConversa(destinatario, titulo, elemento) {
   definirMenuConversas(false);
@@ -597,8 +705,14 @@ function selecionarConversa(destinatario, titulo, elemento) {
     fecharBusca(false);
   }
   conversaAtiva = destinatario;
-  btnContactProfile.hidden = destinatario === "GERAL";
-  contactPresence.hidden = destinatario === "GERAL";
+  const grupo = ehGrupo(destinatario);
+  const privada = destinatario !== "GERAL" && !grupo;
+  btnContactProfile.hidden = !privada;
+  contactPresence.hidden = !privada;
+  groupParticipants.hidden = !grupo;
+  groupParticipants.textContent = grupo ? `${elemento.dataset.totalMembros} participantes` : "";
+  conversationAvatar.textContent = grupo ? "👥" : privada ? "📱" : "💬";
+  document.getElementById("btnClearChat").hidden = grupo;
   sincronizarPresenca();
   document
     .querySelectorAll(".contact-item")
@@ -714,19 +828,32 @@ if (btnClearChat) {
 // Mantém uma consulta por vez para que uma resposta antiga não sobrescreva a atual.
 function carregarMensagens() {
   if (!consultaMensagens) {
-    consultaMensagens = fetch("/api/mensagens", {
+    const telefone = soDigitos(meuTelefone);
+    const mensagensComuns = fetch("/api/mensagens", {
       cache: "no-store",
       signal: AbortSignal.timeout(8000),
-    })
-      .then((resposta) => {
-        if (!resposta.ok) throw new Error("Histórico indisponível");
-        return resposta.json();
-      })
-      .then((mensagens) => {
+    }).then((resposta) => {
+      if (!resposta.ok) throw new Error("Histórico indisponível");
+      return resposta.json();
+    });
+
+    const consultaGrupos = telefone
+      ? fetch(`/api/grupos?telefone=${encodeURIComponent(telefone)}`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(4000),
+      }).then((resposta) => resposta.ok ? resposta.json() : null).catch(() => null)
+      : null;
+
+    consultaMensagens = Promise.all([mensagensComuns, consultaGrupos])
+      .then(([mensagens, dados]) => {
         if (!Array.isArray(mensagens)) throw new Error("Histórico inválido");
-        mensagensCarregadas = mensagens;
+        if (Array.isArray(dados?.grupos) && Array.isArray(dados.mensagens)) {
+          for (const grupo of dados.grupos) adicionarGrupoNaLista(grupo);
+          mensagensDeGrupos = dados.mensagens;
+        }
+        mensagensCarregadas = [...mensagens, ...mensagensDeGrupos].sort((a, b) => a.id - b.id);
         mostrarConexao(navigator.onLine ? "online" : "reconnecting");
-        renderizarMensagens(mensagens);
+        renderizarMensagens(mensagensCarregadas);
       })
       .catch(() => mostrarConexao("reconnecting"))
       .finally(() => { consultaMensagens = undefined; });
@@ -753,11 +880,12 @@ function renderizarMensagens(mensagens) {
     const destinatario = chaveConversa(msg.destinatario);
     const minha = remetente === meuNum;
     const geral = !msg.destinatario || destinatario === "GERAL";
-    if (!geral && !minha && destinatario !== meuNum) continue;
+    const grupo = ehGrupo(destinatario);
+    if (!geral && !grupo && !minha && destinatario !== meuNum) continue;
 
-    const conversa = geral ? "GERAL" : minha ? destinatario : remetente;
+    const conversa = geral ? "GERAL" : grupo || minha ? destinatario : remetente;
     if (!conversa || contatosOcultos.includes(conversa)) continue;
-    if (!geral && !minha) {
+    if (!geral && !grupo && !minha) {
       adicionarContatoNaLista(conversa, separarRemetente(msg.remetente).nome);
     }
     const ultima = ultimasPorConversa.get(conversa);
@@ -785,7 +913,7 @@ function renderizarMensagens(mensagens) {
   }
 
   for (const conversa of ultimasPorConversa.keys()) {
-    if (conversa !== "GERAL") adicionarContatoNaLista(conversa, conversa);
+    if (conversa !== "GERAL" && !ehGrupo(conversa)) adicionarContatoNaLista(conversa, conversa);
   }
   atualizarListaConversas(ultimasPorConversa, naoLidas, meuNum);
 
@@ -816,7 +944,9 @@ function atualizarListaConversas(ultimas, naoLidas, meuNum) {
     const previa = item.querySelector(".contact-preview");
     const horario = item.querySelector(".contact-time");
     const minha = ultima && telefoneRemetente(ultima.remetente) === meuNum;
-    const texto = ultima ? (minha ? "Você: " : "") + ultima.conteudo : "Sem mensagens recentes";
+    const participantes = item.dataset.totalMembros;
+    const semMensagens = participantes ? `${participantes} participantes` : "Sem mensagens recentes";
+    const texto = ultima ? (minha ? "Você: " : "") + ultima.conteudo : semMensagens;
     if (previa.textContent !== texto) {
       previa.textContent = texto;
       previa.title = texto;
@@ -997,7 +1127,7 @@ function adicionarBalaoNaTela(msg, minha) {
     }
   });
 
-  if (minha && msg.id) {
+  if (minha && msg.id && !ehGrupo(msg.destinatario)) {
     const apagar = document.createElement("button");
     apagar.type = "button";
     apagar.textContent = "Apagar mensagem";

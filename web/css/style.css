@@ -97,6 +97,59 @@ body {
     transform: scale(1.05);
 }
 
+.btn-new-group {
+    align-self: flex-start;
+    margin: 10px 16px 4px;
+    padding: 6px 10px;
+    border: 1px solid #93c5fd;
+    border-radius: 8px;
+    background: transparent;
+    color: #1d4ed8;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.btn-new-group:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.group-participants {
+    color: #475569;
+    font-size: 12px;
+}
+
+body.dark-mode .btn-new-group,
+body.dark-mode .group-participants {
+    color: #bfdbfe;
+}
+
+.group-name-input,
+.group-members {
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid #94a3b8;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+}
+
+#groupMembers {
+    display: grid;
+    gap: 8px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+#groupMembers label {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+}
+
 .contacts-list {
     flex: 1;
     overflow-y: auto;

@@ -37,6 +37,7 @@
           </div>
         </div>
 
+        <button class="btn-new-group" id="btnNewGroup" type="button" aria-haspopup="dialog" disabled>+ Novo grupo</button>
         <div class="contacts-list" id="contactsList">
           <div class="contact-item active" data-destinatario="GERAL">
             <div class="avatar-chat">💬</div>
@@ -58,9 +59,10 @@
           <div class="chat-header-info">
             <button class="btn-menu-toggle" id="btnMenuToggle" type="button" aria-label="Conversas"
               aria-controls="chatSidebar" aria-expanded="false">☰</button>
-            <div class="avatar-chat">💬</div>
+            <div class="avatar-chat" id="conversationAvatar" aria-hidden="true">💬</div>
             <div>
               <h2>Sala Geral</h2>
+              <div class="group-participants" id="groupParticipants" hidden></div>
               <div class="contact-presence" id="contactPresence" role="status" hidden></div>
               <span class="connection-status" id="connectionStatus" role="status" data-state="connecting">Conectando…</span>
             </div>
@@ -187,6 +189,23 @@
         </form>
         <form method="dialog" class="profile-actions"><button>Fechar</button></form>
       </div>
+    </dialog>
+
+    <dialog class="profile-dialog" id="newGroupDialog" aria-labelledby="newGroupTitle">
+      <form id="newGroupForm">
+        <h2 id="newGroupTitle">Novo grupo</h2>
+        <label for="groupName">Nome do grupo</label>
+        <input class="group-name-input" id="groupName" type="text" maxlength="60" autocomplete="off" required>
+        <fieldset class="group-members">
+          <legend>Escolha os contatos</legend>
+          <div id="groupMembers"></div>
+        </fieldset>
+        <p class="profile-error" id="groupError" role="status"></p>
+        <div class="profile-actions">
+          <button type="button" id="btnCancelGroup">Cancelar</button>
+          <button type="submit">Criar grupo</button>
+        </div>
+      </form>
     </dialog>
 
     <script src="/js/app.js"></script>
