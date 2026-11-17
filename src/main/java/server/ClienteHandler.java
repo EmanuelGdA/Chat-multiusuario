@@ -52,18 +52,25 @@ public class ClienteHandler implements Runnable {
                 return;
             }
 
-            //  API: Buscar mensagens do MySQL
             if (rota.equals("/api/mensagens")) {
-                List<Mensagem> mensagens = servidor.getRepositorio().buscarUltimas(50);
-                String json = converterParaJson(mensagens);
-                enviarRespostaHttp(saida, "application/json; charset=UTF-8", json.getBytes(StandardCharsets.UTF_8));
+                try {
+                    List<Mensagem> mensagens = servidor.getRepositorio().buscarUltimas(50);
+                    responderJson(saida, "200 OK", converterParaJson(mensagens));
+                } catch (SQLException e) {
+                    responderBancoIndisponivel(saida, e);
+                }
                 return;
             }
 
-            //  API: Enviar mensagem
-            if (rota.startsWith("/api/enviar")) {
-                processarEnvio(rota);
-                enviarRespostaHttp(saida, "application/json; charset=UTF-8", "{\"status\":\"ok\"}".getBytes(StandardCharsets.UTF_8));
+            if (rota.equals("/api/enviar") || rota.startsWith("/api/enviar?")) {
+                try {
+                    processarEnvio(rota);
+                    responderJson(saida, "200 OK", "{\"status\":\"ok\"}");
+                } catch (IllegalArgumentException e) {
+                    responderJson(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+                } catch (SQLException e) {
+                    responderBancoIndisponivel(saida, e);
+                }
                 return;
             }
 
@@ -152,23 +159,23 @@ public class ClienteHandler implements Runnable {
         try {
             String telefone = lerParametros(query).getOrDefault("telefone", "");
             if (!telefone.matches("[0-9]{1,32}")) {
-                responderPerfil(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+                responderJson(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
                 return;
             }
             Perfil perfil = servidor.getRepositorio().buscarPerfil(telefone);
             if (perfil == null) {
-                responderPerfil(saida, "404 Not Found", "{\"status\":\"inexistente\"}");
+                responderJson(saida, "404 Not Found", "{\"status\":\"inexistente\"}");
                 return;
             }
             String json = "{\"nome\":\"" + escaparTexto(perfil.nome())
                     + "\",\"avatar\":\"" + escaparTexto(perfil.avatar())
                     + "\",\"bio\":\"" + escaparTexto(perfil.bio()) + "\"}";
-            responderPerfil(saida, "200 OK", json);
+            responderJson(saida, "200 OK", json);
         } catch (IllegalArgumentException e) {
-            responderPerfil(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+            responderJson(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
         } catch (SQLException e) {
             System.err.println("Erro ao buscar perfil: " + e.getMessage());
-            responderPerfil(saida, "503 Service Unavailable", "{\"status\":\"indisponivel\"}");
+            responderJson(saida, "503 Service Unavailable", "{\"status\":\"indisponivel\"}");
         }
     }
 
@@ -183,7 +190,7 @@ public class ClienteHandler implements Runnable {
             }
             // URLSearchParams envia um formulário ASCII com valores codificados.
             if (cabecalho == null || tamanho < 1 || tamanho > 4096) {
-                responderPerfil(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+                responderJson(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
                 return;
             }
             char[] corpo = new char[tamanho];
@@ -194,7 +201,7 @@ public class ClienteHandler implements Runnable {
                 recebidos += lidos;
             }
             if (recebidos != tamanho) {
-                responderPerfil(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+                responderJson(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
                 return;
             }
 
@@ -205,20 +212,20 @@ public class ClienteHandler implements Runnable {
             String chave = campos.getOrDefault("chave", "");
             if (!telefone.matches("[0-9]{1,32}") || !AVATARES.contains(avatar)
                     || bio.length() > 140 || !chave.matches("[0-9a-f]{64}")) {
-                responderPerfil(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+                responderJson(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
                 return;
             }
 
             if (servidor.getRepositorio().salvarPerfil(telefone, avatar, bio, chave)) {
-                responderPerfil(saida, "200 OK", "{\"status\":\"ok\"}");
+                responderJson(saida, "200 OK", "{\"status\":\"ok\"}");
             } else {
-                responderPerfil(saida, "403 Forbidden", "{\"status\":\"negado\"}");
+                responderJson(saida, "403 Forbidden", "{\"status\":\"negado\"}");
             }
         } catch (IllegalArgumentException e) {
-            responderPerfil(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+            responderJson(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
         } catch (SQLException e) {
             System.err.println("Erro ao salvar perfil: " + e.getMessage());
-            responderPerfil(saida, "503 Service Unavailable", "{\"status\":\"indisponivel\"}");
+            responderJson(saida, "503 Service Unavailable", "{\"status\":\"indisponivel\"}");
         }
     }
 
@@ -233,7 +240,7 @@ public class ClienteHandler implements Runnable {
         return campos;
     }
 
-    private void responderPerfil(OutputStream saida, String status, String json) throws IOException {
+    private void responderJson(OutputStream saida, String status, String json) throws IOException {
         byte[] dados = json.getBytes(StandardCharsets.UTF_8);
         String cabecalho = "HTTP/1.1 " + status + "\r\n"
                 + "Content-Type: application/json; charset=UTF-8\r\n"
@@ -258,35 +265,19 @@ public class ClienteHandler implements Runnable {
         return null;
     }
 
-    private void processarEnvio(String rota) {
-        try {
-            if (!rota.contains("?")) return;
+    private void processarEnvio(String rota) throws SQLException {
+        int separador = rota.indexOf('?');
+        if (separador < 0) throw new IllegalArgumentException("Envio sem parâmetros");
 
-            String query = rota.substring(rota.indexOf("?") + 1);
-            String remetente = "";
-            String destinatario = "GERAL";
-            String conteudo = "";
+        Map<String, String> campos = lerParametros(rota.substring(separador + 1));
+        Mensagem mensagem = new Mensagem(campos.get("remetente"), campos.get("conteudo"));
+        mensagem.setDestinatario(campos.getOrDefault("destinatario", "GERAL"));
+        servidor.getRepositorio().salvar(mensagem);
+    }
 
-            for (String param : query.split("&")) {
-                String[] par = param.split("=", 2);
-                if (par.length == 2) {
-                    String chave = par[0];
-                    String valor = URLDecoder.decode(par[1], StandardCharsets.UTF_8);
-                    if (chave.equals("remetente")) remetente = valor;
-                    if (chave.equals("destinatario")) destinatario = valor;
-                    if (chave.equals("conteudo")) conteudo = valor;
-                }
-            }
-
-            if (!remetente.trim().isEmpty() && !conteudo.trim().isEmpty()) {
-                Mensagem msg = new Mensagem(remetente, conteudo);
-                msg.setDestinatario(destinatario);
-                servidor.getRepositorio().salvar(msg);
-                System.out.println("-> [" + destinatario + "] " + remetente + ": " + conteudo);
-            }
-        } catch (Exception e) {
-            System.err.println("Erro ao processar envio: " + e.getMessage());
-        }
+    private void responderBancoIndisponivel(OutputStream saida, SQLException erro) throws IOException {
+        System.err.println("Erro no banco de mensagens: " + erro.getMessage());
+        responderJson(saida, "503 Service Unavailable", "{\"status\":\"indisponivel\"}");
     }
 
     private String converterParaJson(List<Mensagem> mensagens) {

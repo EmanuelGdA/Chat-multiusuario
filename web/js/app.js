@@ -176,6 +176,34 @@ const contactsList = document.getElementById("contactsList");
 const messagesContainer = document.getElementById("messagesContainer");
 const inputMessage = document.getElementById("inputMessage");
 const btnSend = document.getElementById("btnSend");
+const connectionStatus = document.getElementById("connectionStatus");
+const sendStatus = document.getElementById("sendStatus");
+const btnMenuToggle = document.getElementById("btnMenuToggle");
+const sidebar = document.getElementById("chatSidebar");
+
+function chaveRascunho(conversa) {
+  return `chat_draft_${soDigitos(meuTelefone)}_${chaveConversa(conversa)}`;
+}
+
+function guardarRascunho() {
+  const chave = chaveRascunho(conversaAtiva);
+  if (inputMessage.value) {
+    sessionStorage.setItem(chave, inputMessage.value);
+  } else {
+    sessionStorage.removeItem(chave);
+  }
+}
+
+function mostrarConexao(estado) {
+  if (connectionStatus.dataset.state === estado) return;
+  connectionStatus.dataset.state = estado;
+  connectionStatus.textContent = estado === "online" ? "● Online" : "Reconectando…";
+}
+
+function definirMenuConversas(aberto) {
+  sidebar.classList.toggle("aberta", aberto);
+  btnMenuToggle.setAttribute("aria-expanded", String(aberto));
+}
 
 // Remove tudo que não for número (acessível em todo o arquivo)
 function soDigitos(str) {
@@ -256,7 +284,8 @@ function atualizarPerfil(nome, tel) {
   myPhoneDisplay.textContent = tel;
   atualizarAvatar();
   btnMyProfile.disabled = false;
-  inputMessage.focus();
+  inputMessage.value = sessionStorage.getItem(chaveRascunho(conversaAtiva)) || "";
+  if (!window.matchMedia("(max-width: 768px)").matches) inputMessage.focus();
 }
 
 // Adicionar novos contatos na lista (validando se o número existe no banco)
@@ -314,12 +343,13 @@ function adicionarContatoNaLista(numero, nome, selecionar = false) {
   item.className = "contact-item";
   item.dataset.destinatario = numero;
   item.innerHTML = `
-        <div style="display:flex; align-items:center; gap:12px;">
-            <div class="avatar-chat">📱</div>
-            <div class="contact-info">
+        <div class="avatar-chat" aria-hidden="true">📱</div>
+        <div class="contact-info">
+            <div class="contact-heading">
                 <h4></h4>
-                <p>Conversa Privada</p>
+                <time class="contact-time" hidden></time>
             </div>
+            <p class="contact-preview">Sem mensagens recentes</p>
         </div>
         <span class="unread-badge" hidden></span>
         <button class="btn-del-contact" title="Remover contato">🗑️</button>
@@ -361,7 +391,7 @@ function adicionarContatoNaLista(numero, nome, selecionar = false) {
         selecionarConversa(
           "GERAL",
           "Sala Geral",
-          document.querySelector(".contact-item"),
+          document.querySelector('[data-destinatario="GERAL"]'),
         );
         carregarMensagens();
       }
@@ -377,7 +407,11 @@ function adicionarContatoNaLista(numero, nome, selecionar = false) {
 
 // Troca de conversa ao clicar no contato
 function selecionarConversa(destinatario, titulo, elemento) {
+  definirMenuConversas(false);
   if (chaveConversa(destinatario) !== chaveConversa(conversaAtiva)) {
+    guardarRascunho();
+    inputMessage.value = sessionStorage.getItem(chaveRascunho(destinatario)) || "";
+    sendStatus.textContent = "";
     ultimasMensagensDaConversa = [];
     messagesContainer.replaceChildren();
     fecharBusca(false);
@@ -397,7 +431,7 @@ function selecionarConversa(destinatario, titulo, elemento) {
 }
 
 // Clique na Sala Geral original
-const salaGeralItem = document.querySelector(".contact-item");
+const salaGeralItem = document.querySelector('[data-destinatario="GERAL"]');
 if (salaGeralItem) {
   salaGeralItem.addEventListener("click", () => {
     selecionarConversa("GERAL", "Sala Geral", salaGeralItem);
@@ -406,27 +440,55 @@ if (salaGeralItem) {
 
 // Enviar mensagem
 btnSend.addEventListener("click", enviar);
-inputMessage.addEventListener("keypress", (e) => {
-  if (e.key === "Enter") enviar();
+inputMessage.addEventListener("input", guardarRascunho);
+inputMessage.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.isComposing) {
+    event.preventDefault();
+    enviar();
+  }
 });
 
 async function enviar() {
-  const texto = inputMessage.value.trim();
-  if (!texto) return;
+  const rascunho = inputMessage.value;
+  const texto = rascunho.trim();
+  if (!texto || btnSend.disabled) return;
 
   if (!meuIdentificador) {
     loginModal.style.display = "flex";
     return;
   }
 
-  inputMessage.value = "";
+  const destinatario = conversaAtiva;
+  const chave = chaveRascunho(destinatario);
+  guardarRascunho();
+  btnSend.disabled = true;
+  sendStatus.textContent = "";
 
   try {
-    const url = `/api/enviar?remetente=${encodeURIComponent(meuIdentificador)}&destinatario=${encodeURIComponent(conversaAtiva)}&conteudo=${encodeURIComponent(texto)}`;
-    await fetch(url);
+    const parametros = new URLSearchParams({
+      remetente: meuIdentificador, destinatario, conteudo: texto,
+    });
+    const resposta = await fetch(`/api/enviar?${parametros}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!resposta.ok || (await resposta.json()).status !== "ok") {
+      throw new Error("Envio sem confirmação");
+    }
+
+    if (sessionStorage.getItem(chave) === rascunho) {
+      sessionStorage.removeItem(chave);
+      if (chaveRascunho(conversaAtiva) === chave) inputMessage.value = "";
+    }
+    await consultaMensagens;
     carregarMensagens();
-  } catch (e) {
-    console.error("Erro ao enviar mensagem:", e);
+  } catch {
+    if (chaveRascunho(conversaAtiva) === chave) {
+      sendStatus.textContent = "Envio sem confirmação. O rascunho foi mantido.";
+    }
+    carregarMensagens();
+  } finally {
+    btnSend.disabled = false;
   }
 }
 
@@ -465,14 +527,21 @@ if (btnClearChat) {
 // Mantém uma consulta por vez para que uma resposta antiga não sobrescreva a atual.
 function carregarMensagens() {
   if (!consultaMensagens) {
-    consultaMensagens = fetch("/api/mensagens", { cache: "no-store" })
-      .then((resposta) => resposta.json())
+    consultaMensagens = fetch("/api/mensagens", {
+      cache: "no-store",
+      signal: AbortSignal.timeout(8000),
+    })
+      .then((resposta) => {
+        if (!resposta.ok) throw new Error("Histórico indisponível");
+        return resposta.json();
+      })
       .then((mensagens) => {
         if (!Array.isArray(mensagens)) throw new Error("Histórico inválido");
         mensagensCarregadas = mensagens;
+        mostrarConexao(navigator.onLine ? "online" : "reconnecting");
         renderizarMensagens(mensagens);
       })
-      .catch((erro) => console.error("Erro ao buscar histórico:", erro))
+      .catch(() => mostrarConexao("reconnecting"))
       .finally(() => { consultaMensagens = undefined; });
   }
   return consultaMensagens;
@@ -488,6 +557,7 @@ function renderizarMensagens(mensagens) {
   leitura ||= { inicio: maiorId, conversas: {} };
   const naTela = document.visibilityState === "visible";
   const naoLidas = new Map();
+  const ultimasPorConversa = new Map();
   const mensagensDaConversa = [];
   let notificar = false;
 
@@ -503,6 +573,8 @@ function renderizarMensagens(mensagens) {
     if (!geral && !minha) {
       adicionarContatoNaLista(conversa, separarRemetente(msg.remetente).nome);
     }
+    const ultima = ultimasPorConversa.get(conversa);
+    if (!ultima || msg.id > ultima.id) ultimasPorConversa.set(conversa, msg);
 
     const lidaAte = leitura.conversas[conversa] ?? leitura.inicio;
     if (conversa === ativa) {
@@ -525,13 +597,10 @@ function renderizarMensagens(mensagens) {
     localStorage.setItem(`chat_read_${meuNum}`, leituraAtual);
   }
 
-  for (const item of contactsList.querySelectorAll(".contact-item")) {
-    const badge = item.querySelector(".unread-badge");
-    const total = naoLidas.get(chaveConversa(item.dataset.destinatario)) || 0;
-    badge.hidden = total === 0;
-    badge.textContent = total;
-    badge.setAttribute("aria-label", `${total} mensagens não lidas`);
+  for (const conversa of ultimasPorConversa.keys()) {
+    if (conversa !== "GERAL") adicionarContatoNaLista(conversa, conversa);
   }
+  atualizarListaConversas(ultimasPorConversa, naoLidas, meuNum);
 
   const assinatura = JSON.stringify([ativa, mensagensDaConversa]);
   if (assinatura === conversaRenderizada) return;
@@ -548,6 +617,38 @@ function renderizarMensagens(mensagens) {
   messagesContainer.scrollTop = estavaNoFim && searchPanel.hidden
     ? messagesContainer.scrollHeight : anterior;
   if (!searchPanel.hidden) atualizarBusca(idEncontrado, false);
+}
+
+function atualizarListaConversas(ultimas, naoLidas, meuNum) {
+  const itens = Array.from(contactsList.querySelectorAll(".contact-item"));
+  const ultimaDe = (item) => ultimas.get(chaveConversa(item.dataset.destinatario));
+  itens.sort((a, b) => (ultimaDe(b)?.id || 0) - (ultimaDe(a)?.id || 0));
+
+  itens.forEach((item, indice) => {
+    const ultima = ultimaDe(item);
+    const previa = item.querySelector(".contact-preview");
+    const horario = item.querySelector(".contact-time");
+    const minha = ultima && telefoneRemetente(ultima.remetente) === meuNum;
+    const texto = ultima ? (minha ? "Você: " : "") + ultima.conteudo : "Sem mensagens recentes";
+    if (previa.textContent !== texto) {
+      previa.textContent = texto;
+      previa.title = texto;
+    }
+    const hora = ultima?.horario?.slice(0, 5) || "";
+    horario.hidden = !hora;
+    if (horario.textContent !== hora) horario.textContent = hora;
+
+    const badge = item.querySelector(".unread-badge");
+    const total = naoLidas.get(chaveConversa(item.dataset.destinatario)) || 0;
+    badge.hidden = total === 0;
+    if (badge.textContent !== String(total)) {
+      badge.textContent = total;
+      badge.setAttribute("aria-label", `${total} mensagens não lidas`);
+    }
+
+    const posicaoAtual = contactsList.children[indice];
+    if (posicaoAtual !== item) contactsList.insertBefore(item, posicaoAtual);
+  });
 }
 
 function fecharBusca(devolverFoco = true) {
@@ -618,19 +719,23 @@ document.addEventListener("visibilitychange", carregarMensagens);
 carregarMensagens();
 setInterval(carregarMensagens, 1500);
 
-// Abrir/Fechar a barra lateral ao clicar no botão sanduíche (☰)
-const btnMenuToggle = document.getElementById("btnMenuToggle");
-const sidebar = document.querySelector(".sidebar");
+window.addEventListener("offline", () => mostrarConexao("reconnecting"));
+window.addEventListener("online", carregarMensagens);
+btnMenuToggle.addEventListener("click", () => {
+  definirMenuConversas(!sidebar.classList.contains("aberta"));
+});
+messagesContainer.addEventListener("click", () => definirMenuConversas(false));
 
-if (btnMenuToggle && sidebar) {
-  btnMenuToggle.addEventListener("click", () => {
-    sidebar.classList.toggle("aberta");
-  });
-
-  // Fecha a barra lateral se clicar na área de mensagens
-  messagesContainer.addEventListener("click", () => {
-    sidebar.classList.remove("aberta");
-  });
+const viewportVisivel = window.visualViewport;
+if (viewportVisivel) {
+  const atualizarViewport = () => {
+    const layout = document.documentElement.style;
+    layout.setProperty("--chat-height", `${viewportVisivel.height}px`);
+    layout.setProperty("--chat-top", `${viewportVisivel.offsetTop}px`);
+  };
+  viewportVisivel.addEventListener("resize", atualizarViewport);
+  viewportVisivel.addEventListener("scroll", atualizarViewport);
+  atualizarViewport();
 }
 
 function adicionarBalaoNaTela(msg, minha) {
@@ -769,6 +874,7 @@ document.querySelectorAll(".emoji-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     if (inputMessage) {
       inputMessage.value += btn.getAttribute("data-emoji");
+      guardarRascunho();
       inputMessage.focus();
     }
   });

@@ -2,14 +2,14 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
     <title>ConnectChat</title>
     <link rel="stylesheet" href="/css/style.css" />
   </head>
   <body>
     <div class="chat-app-wrapper">
       <!-- COLUNA DA ESQUERDA: PERFIL E CONTATOS -->
-      <aside class="sidebar">
+      <aside class="sidebar" id="chatSidebar">
         <div class="sidebar-header">
           <button class="my-profile" id="btnMyProfile" type="button" aria-haspopup="dialog" aria-label="Abrir meu perfil" disabled>
             <span class="avatar" id="myAvatar" aria-hidden="true">👤</span>
@@ -41,8 +41,11 @@
           <div class="contact-item active" data-destinatario="GERAL">
             <div class="avatar-chat">💬</div>
             <div class="contact-info">
-              <h4>Sala Geral</h4>
-              <p>Histórico global do chat</p>
+              <div class="contact-heading">
+                <h4>Sala Geral</h4>
+                <time class="contact-time" hidden></time>
+              </div>
+              <p class="contact-preview">Sem mensagens recentes</p>
             </div>
             <span class="unread-badge" hidden></span>
           </div>
@@ -53,11 +56,12 @@
       <main class="chat-panel">
         <header class="chat-header">
           <div class="chat-header-info">
-            <button class="btn-menu-toggle" id="btnMenuToggle">☰</button>
+            <button class="btn-menu-toggle" id="btnMenuToggle" type="button" aria-label="Conversas"
+              aria-controls="chatSidebar" aria-expanded="false">☰</button>
             <div class="avatar-chat">💬</div>
             <div>
               <h2>Sala Geral</h2>
-              <span class="status-online">● Online</span>
+              <span class="connection-status" id="connectionStatus" role="status" data-state="connecting">Conectando…</span>
             </div>
           </div>
           <div style="display: flex; gap: 8px; align-items: center">
@@ -107,14 +111,16 @@
         </div>
 
 
+        <p class="send-status" id="sendStatus" role="status"></p>
         <footer class="chat-input-bar">
           <input
             type="text"
             id="inputMessage"
             placeholder="Digite uma mensagem..."
             autocomplete="off"
+            enterkeyhint="send"
           />
-          <button id="btnSend" class="btn-send">➤</button>
+          <button id="btnSend" class="btn-send" type="button" aria-label="Enviar mensagem">➤</button>
         </footer>
       </main>
     </div>

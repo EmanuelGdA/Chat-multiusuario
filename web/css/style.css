@@ -127,6 +127,35 @@ body {
     font-size: 18px;
 }
 
+.contact-item .avatar-chat {
+    flex-shrink: 0;
+}
+
+.contact-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.contact-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.contact-heading h4,
+.contact-preview {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contact-time {
+    flex-shrink: 0;
+    margin-left: auto;
+    color: #64748b;
+    font-size: 11px;
+}
+
 .contact-info h4 {
     font-size: 14px;
     color: #0f172a;
@@ -140,6 +169,8 @@ body {
 /* ================= PAINEL DO CHAT ================= */
 .chat-panel {
     flex: 1;
+    min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     background-color: #f8fafc;
@@ -162,14 +193,47 @@ body {
     color: #0f172a;
 }
 
-.status-online {
+.connection-status {
     font-size: 12px;
-    color: #16a34a;
+    color: #92400e;
+}
+
+.connection-status[data-state="online"] {
+    color: #15803d;
+}
+
+.send-status {
+    padding: 6px 16px;
+    color: #92400e;
+    font-size: 12px;
+}
+
+.send-status:empty {
+    display: none;
+}
+
+body.dark-mode .connection-status,
+body.dark-mode .send-status {
+    color: #fbbf24;
+}
+
+body.dark-mode .connection-status[data-state="online"] {
+    color: #86efac;
+}
+
+body.dark-mode .contact-time {
+    color: #94a3b8;
+}
+
+.btn-send:disabled {
+    opacity: 0.6;
+    cursor: wait;
 }
 
 /* Mensagens */
 .messages-container {
     flex: 1;
+    min-height: 0;
     padding: 20px;
     overflow-y: auto;
     display: flex;
@@ -316,15 +380,39 @@ body {
 
 /* Ajustes exclusivos para tela de CELULAR */
 @media (max-width: 768px) {
-    body { padding: 0; }
-    .chat-app-wrapper { height: 100vh; border-radius: 0; }
+    body {
+        padding: 0;
+        overflow: hidden;
+    }
+
+    .chat-app-wrapper {
+        position: fixed;
+        inset: var(--chat-top, 0px) 0 auto;
+        height: 100vh;
+        height: var(--chat-height, 100dvh);
+        border-radius: 0;
+    }
+
+    .chat-input-bar {
+        flex-shrink: 0;
+        padding: 8px 12px max(8px, env(safe-area-inset-bottom));
+    }
+
+    .chat-input-bar input {
+        min-width: 0;
+        font-size: 16px;
+    }
+
+    .chat-input-bar .btn-send {
+        flex-shrink: 0;
+    }
 
     /* Exibe o botão ☰ no topo do chat */
     .btn-menu-toggle { display: block; }
 
     /* A barra lateral vira uma gaveta deslizante */
     .sidebar {
-        position: fixed;
+        position: absolute;
         top: 0;
         left: -320px; /* Escondida na esquerda */
         width: 280px;
