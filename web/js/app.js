@@ -12,9 +12,13 @@ let consultaMensagens;
 let mensagensCarregadas = [];
 let conversaRenderizada;
 let leitura;
+let contatosSalvos = new Map();
 
 const btnContactProfile = document.getElementById("btnContactProfile");
 const contactProfile = document.getElementById("contactProfile");
+const contactNameForm = document.getElementById("contactNameForm");
+const contactLocalName = document.getElementById("contactLocalName");
+const contactNameStatus = document.getElementById("contactNameStatus");
 const btnSearch = document.getElementById("btnSearch");
 const searchPanel = document.getElementById("conversationSearch");
 const searchInput = document.getElementById("searchMessages");
@@ -61,6 +65,10 @@ async function abrirPerfilContato(telefone, nome) {
   const avatar = document.getElementById("contactAvatar");
   titulo.textContent = nome || "Perfil do contato";
   document.getElementById("contactProfilePhone").textContent = telefone;
+  contactNameForm.dataset.telefone = telefone;
+  contactNameForm.hidden = !encontrarContato(telefone);
+  contactLocalName.value = contatosSalvos.get(telefone)?.apelido || "";
+  contactNameStatus.textContent = "";
   avatar.textContent = textoAvatar(nome || "");
   bio.textContent = "Carregando perfil…";
   contactProfile.showModal();
@@ -78,6 +86,21 @@ async function abrirPerfilContato(telefone, nome) {
     }
   }
 }
+
+contactNameForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const telefone = contactNameForm.dataset.telefone;
+  const item = encontrarContato(telefone);
+  if (!item) return;
+
+  salvarContato(telefone, item.dataset.nomeCadastro, contactLocalName.value);
+  const nome = atualizarNomeContato(item);
+  if (chaveConversa(conversaAtiva) === telefone) {
+    document.querySelector(".chat-header h2").textContent = nome;
+  }
+  contactLocalName.value = contatosSalvos.get(telefone).apelido;
+  contactNameStatus.textContent = "Nome salvo.";
+});
 
 btnContactProfile.addEventListener("click", () => {
   abrirPerfilContato(chaveConversa(conversaAtiva), "");
@@ -343,7 +366,8 @@ if (btnResetProfile) {
   btnResetProfile.addEventListener("click", () => {
     if (confirm("Deseja sair deste perfil e criar ou usar outro número?")) {
       for (const chave of Object.keys(localStorage)) {
-        if (!chave.startsWith("chat_profile_key_") && !chave.startsWith("chat_read_")) {
+        if (!chave.startsWith("chat_profile_key_") && !chave.startsWith("chat_read_")
+            && !chave.startsWith("chat_contacts_")) {
           localStorage.removeItem(chave);
         }
       }
@@ -362,6 +386,10 @@ function atualizarPerfil(nome, tel) {
 
   meuNome = nome;
   meuTelefone = tel;
+  contatosSalvos = new Map(JSON.parse(localStorage.getItem(chaveContatos()) || "[]"));
+  for (const [telefone, contato] of contatosSalvos) {
+    if (!contatosOcultos.includes(telefone)) adicionarContatoNaLista(telefone, contato.nome);
+  }
   meuIdentificador = `${nome} (${tel})`;
   myNameDisplay.textContent = nome;
   myPhoneDisplay.textContent = tel;
@@ -405,27 +433,61 @@ btnAddContact.addEventListener("click", async () => {
       return;
     }
 
+    const nomeCadastro = dados.nome || formatado;
+    const apelido = prompt("Como você quer chamar este contato?",
+      contatosSalvos.get(limpo)?.apelido || nomeCadastro);
+    if (apelido === null) return;
+
+    salvarContato(limpo, nomeCadastro, apelido.trim() === nomeCadastro ? "" : apelido);
     // Se existe, desbloqueia e adiciona na lista
     contatosOcultos = contatosOcultos.filter((n) => n !== limpo);
     localStorage.setItem("contatos_ocultos", JSON.stringify(contatosOcultos));
 
-    adicionarContatoNaLista(formatado, dados.nome, true);
+    adicionarContatoNaLista(formatado, nomeCadastro, true);
   } catch (e) {
     alert("Erro ao verificar o número no servidor.");
   }
 });
 
+function chaveContatos() {
+  return `chat_contacts_${soDigitos(meuTelefone)}`;
+}
+
+function guardarContatos() {
+  localStorage.setItem(chaveContatos(), JSON.stringify([...contatosSalvos]));
+}
+
+function salvarContato(telefone, nome, apelido) {
+  contatosSalvos.set(telefone, { nome, apelido: apelido.trim().slice(0, 60) });
+  guardarContatos();
+}
+
+function encontrarContato(telefone) {
+  return contactsList.querySelector(`[data-destinatario="${soDigitos(telefone)}"]`);
+}
+
+function atualizarNomeContato(item) {
+  const telefone = item.dataset.destinatario;
+  const nome = contatosSalvos.get(telefone)?.apelido || item.dataset.nomeCadastro;
+  item.querySelector("h4").textContent = nome;
+  return nome;
+}
+
 function adicionarContatoNaLista(numero, nome, selecionar = false) {
-  const existente = Array.from(contactsList.querySelectorAll(".contact-item"))
-    .find((item) => chaveConversa(item.dataset.destinatario) === soDigitos(numero));
+  const telefone = soDigitos(numero);
+  const existente = encontrarContato(telefone);
   if (existente) {
-    if (selecionar) selecionarConversa(numero, nome || numero, existente);
+    if (selecionar) {
+      existente.dataset.nomeCadastro = nome || numero;
+      selecionarConversa(numero, atualizarNomeContato(existente), existente);
+    }
     return;
   }
 
   const item = document.createElement("div");
   item.className = "contact-item";
-  item.dataset.destinatario = numero;
+  item.dataset.destinatario = telefone;
+  item.dataset.nomeCadastro = nome || numero;
   item.innerHTML = `
         <div class="avatar-chat" aria-hidden="true">📱</div>
         <div class="contact-info">
@@ -438,7 +500,8 @@ function adicionarContatoNaLista(numero, nome, selecionar = false) {
         <span class="unread-badge" hidden></span>
         <button class="btn-del-contact" title="Remover contato">🗑️</button>
     `;
-  item.querySelector("h4").textContent = nome || numero;
+  const titulo = item.querySelector("h4");
+  atualizarNomeContato(item);
 
   // Botão para remover contato da barra
   const btnDel = item.querySelector(".btn-del-contact");
@@ -450,7 +513,8 @@ function adicionarContatoNaLista(numero, nome, selecionar = false) {
           `Deseja remover o contato ${numero} e apagar as mensagens dele?`,
         )
       ) {
-        const numLimpo = soDigitos(numero);
+        const numLimpo = telefone;
+        if (contatosSalvos.delete(numLimpo)) guardarContatos();
 
         // 1. Salva na lista de apagados para o chat não ressuscitar ele
         if (!contatosOcultos.includes(numLimpo)) {
@@ -483,10 +547,10 @@ function adicionarContatoNaLista(numero, nome, selecionar = false) {
   }
 
   item.addEventListener("click", () =>
-    selecionarConversa(numero, nome || numero, item),
+    selecionarConversa(numero, titulo.textContent, item),
   );
   contactsList.appendChild(item);
-  if (selecionar) selecionarConversa(numero, nome || numero, item);
+  if (selecionar) selecionarConversa(numero, titulo.textContent, item);
 }
 
 // Troca de conversa ao clicar no contato

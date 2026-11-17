@@ -830,6 +830,30 @@ body.dark-mode .profile-dialog {
     overflow-wrap: anywhere;
 }
 
+#contactNameForm input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #94a3b8;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+}
+
+#contactNameForm button {
+    justify-self: start;
+    padding: 7px 12px;
+    border: 0;
+    border-radius: 8px;
+    background: #2563eb;
+    color: white;
+    cursor: pointer;
+}
+
+#contactNameStatus:empty {
+    display: none;
+}
+
 .contact-profile-content .profile-actions {
     display: flex;
 }

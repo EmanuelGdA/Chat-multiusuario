@@ -178,6 +178,13 @@
         <h2 id="contactProfileName">Perfil do contato</h2>
         <p id="contactProfilePhone"></p>
         <p id="contactProfileBio" role="status"></p>
+        <form id="contactNameForm" hidden>
+          <label for="contactLocalName">Nome na sua lista</label>
+          <input type="text" id="contactLocalName" maxlength="60" autocomplete="off"
+            placeholder="Usar nome do cadastro">
+          <button type="submit">Salvar nome</button>
+          <span id="contactNameStatus" role="status"></span>
+        </form>
         <form method="dialog" class="profile-actions"><button>Fechar</button></form>
       </div>
     </dialog>
