@@ -38,12 +38,13 @@
         </div>
 
         <div class="contacts-list" id="contactsList">
-          <div class="contact-item active">
+          <div class="contact-item active" data-destinatario="GERAL">
             <div class="avatar-chat">💬</div>
             <div class="contact-info">
               <h4>Sala Geral</h4>
               <p>Histórico global do chat</p>
             </div>
+            <span class="unread-badge" hidden></span>
           </div>
         </div>
       </aside>
@@ -60,6 +61,9 @@
             </div>
           </div>
           <div style="display: flex; gap: 8px; align-items: center">
+            <button class="chat-tool" id="btnContactProfile" type="button" hidden>Perfil</button>
+            <button class="chat-tool" id="btnSearch" type="button" aria-label="Buscar na conversa"
+              aria-controls="conversationSearch" aria-expanded="false">🔍</button>
             <button
               class="btn-theme-toggle"
               id="btnThemeToggle"
@@ -78,6 +82,14 @@
           </div>
         </header>
 
+        <div class="conversation-search" id="conversationSearch" hidden>
+          <input type="search" id="searchMessages" aria-label="Buscar nas mensagens" placeholder="Buscar na conversa">
+          <span id="searchStatus" role="status"></span>
+          <button type="button" id="searchPrev" aria-label="Resultado anterior">↑</button>
+          <button type="button" id="searchNext" aria-label="Próximo resultado">↓</button>
+          <button type="button" id="searchClose" aria-label="Fechar busca">×</button>
+        </div>
+        <div class="sr-only" id="clipboardStatus" role="status"></div>
         <section class="messages-container" id="messagesContainer">
           <!-- Balões aparecem aqui -->
         </section>
@@ -144,12 +156,23 @@
         <label for="profileBio">Sobre mim</label>
         <textarea id="profileBio" maxlength="140" rows="3"
           placeholder="Escreva uma frase sobre você"></textarea>
-        <p class="profile-note">Seu avatar e sua descrição ficam salvos neste navegador.</p>
+        <p class="profile-note">Seu avatar e sua descrição aparecem para os contatos.</p>
+        <p class="profile-error" id="profileError" role="status"></p>
         <div class="profile-actions">
           <button type="button" id="btnCloseProfile">Fechar</button>
           <button type="submit">Salvar perfil</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog class="profile-dialog" id="contactProfile" aria-labelledby="contactProfileName">
+      <div class="contact-profile-content">
+        <span class="avatar" id="contactAvatar" aria-hidden="true">👤</span>
+        <h2 id="contactProfileName">Perfil do contato</h2>
+        <p id="contactProfilePhone"></p>
+        <p id="contactProfileBio" role="status"></p>
+        <form method="dialog" class="profile-actions"><button>Fechar</button></form>
+      </div>
     </dialog>
 
     <script src="/js/app.js"></script>

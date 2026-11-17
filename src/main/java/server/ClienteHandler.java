@@ -1,6 +1,7 @@
 package server;
 
 import model.Mensagem;
+import persistence.MensagemRepository.Perfil;
 
 import java.io.*;
 import java.net.Socket;
@@ -10,12 +11,18 @@ import java.nio.file.Files;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.sql.SQLException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 
 public class ClienteHandler implements Runnable {
 
     private final Socket socket;
     private final Servidor servidor;
     private static final DateTimeFormatter HORA_FORMATO = DateTimeFormatter.ofPattern("HH:mm:ss");
+
+    private static final Set<String> AVATARES = Set.of("initials", "😊", "🎧", "🚀", "🌻", "🐱");
 
     public ClienteHandler(Socket socket, Servidor servidor) {
         this.socket = socket;
@@ -28,13 +35,22 @@ public class ClienteHandler implements Runnable {
              OutputStream saida = socket.getOutputStream()) {
 
             String linha = leitor.readLine();
-            if (linha == null || !linha.startsWith("GET")) {
-                return;
-            }
+            if (linha == null) return;
 
             String[] partes = linha.split(" ");
             if (partes.length < 2) return;
+            String metodo = partes[0];
             String rota = partes[1];
+            if ("POST".equals(metodo) && "/api/perfil".equals(rota)) {
+                salvarPerfil(leitor, saida);
+                return;
+            }
+            if (!"GET".equals(metodo)) return;
+
+            if (rota.startsWith("/api/perfil?")) {
+                buscarPerfil(rota.substring("/api/perfil?".length()), saida);
+                return;
+            }
 
             //  API: Buscar mensagens do MySQL
             if (rota.equals("/api/mensagens")) {
@@ -132,6 +148,103 @@ public class ClienteHandler implements Runnable {
 
     }
 
+    private void buscarPerfil(String query, OutputStream saida) throws IOException {
+        try {
+            String telefone = lerParametros(query).getOrDefault("telefone", "");
+            if (!telefone.matches("[0-9]{1,32}")) {
+                responderPerfil(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+                return;
+            }
+            Perfil perfil = servidor.getRepositorio().buscarPerfil(telefone);
+            if (perfil == null) {
+                responderPerfil(saida, "404 Not Found", "{\"status\":\"inexistente\"}");
+                return;
+            }
+            String json = "{\"nome\":\"" + escaparTexto(perfil.nome())
+                    + "\",\"avatar\":\"" + escaparTexto(perfil.avatar())
+                    + "\",\"bio\":\"" + escaparTexto(perfil.bio()) + "\"}";
+            responderPerfil(saida, "200 OK", json);
+        } catch (IllegalArgumentException e) {
+            responderPerfil(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+        } catch (SQLException e) {
+            System.err.println("Erro ao buscar perfil: " + e.getMessage());
+            responderPerfil(saida, "503 Service Unavailable", "{\"status\":\"indisponivel\"}");
+        }
+    }
+
+    private void salvarPerfil(BufferedReader leitor, OutputStream saida) throws IOException {
+        try {
+            int tamanho = -1;
+            String cabecalho;
+            while ((cabecalho = leitor.readLine()) != null && !cabecalho.isEmpty()) {
+                if (cabecalho.regionMatches(true, 0, "Content-Length:", 0, 15)) {
+                    tamanho = Integer.parseInt(cabecalho.substring(15).trim());
+                }
+            }
+            // URLSearchParams envia um formulário ASCII com valores codificados.
+            if (cabecalho == null || tamanho < 1 || tamanho > 4096) {
+                responderPerfil(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+                return;
+            }
+            char[] corpo = new char[tamanho];
+            int recebidos = 0;
+            while (recebidos < tamanho) {
+                int lidos = leitor.read(corpo, recebidos, tamanho - recebidos);
+                if (lidos == -1) break;
+                recebidos += lidos;
+            }
+            if (recebidos != tamanho) {
+                responderPerfil(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+                return;
+            }
+
+            Map<String, String> campos = lerParametros(new String(corpo));
+            String telefone = campos.getOrDefault("telefone", "");
+            String avatar = campos.getOrDefault("avatar", "");
+            String bio = campos.getOrDefault("bio", "").strip();
+            String chave = campos.getOrDefault("chave", "");
+            if (!telefone.matches("[0-9]{1,32}") || !AVATARES.contains(avatar)
+                    || bio.length() > 140 || !chave.matches("[0-9a-f]{64}")) {
+                responderPerfil(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+                return;
+            }
+
+            if (servidor.getRepositorio().salvarPerfil(telefone, avatar, bio, chave)) {
+                responderPerfil(saida, "200 OK", "{\"status\":\"ok\"}");
+            } else {
+                responderPerfil(saida, "403 Forbidden", "{\"status\":\"negado\"}");
+            }
+        } catch (IllegalArgumentException e) {
+            responderPerfil(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+        } catch (SQLException e) {
+            System.err.println("Erro ao salvar perfil: " + e.getMessage());
+            responderPerfil(saida, "503 Service Unavailable", "{\"status\":\"indisponivel\"}");
+        }
+    }
+
+    private Map<String, String> lerParametros(String query) {
+        Map<String, String> campos = new HashMap<>();
+        for (String parametro : query.split("&")) {
+            String[] par = parametro.split("=", 2);
+            if (par.length == 2) {
+                campos.put(par[0], URLDecoder.decode(par[1], StandardCharsets.UTF_8));
+            }
+        }
+        return campos;
+    }
+
+    private void responderPerfil(OutputStream saida, String status, String json) throws IOException {
+        byte[] dados = json.getBytes(StandardCharsets.UTF_8);
+        String cabecalho = "HTTP/1.1 " + status + "\r\n"
+                + "Content-Type: application/json; charset=UTF-8\r\n"
+                + "Content-Length: " + dados.length + "\r\n"
+                + "Cache-Control: no-store\r\n"
+                + "Connection: close\r\n\r\n";
+        saida.write(cabecalho.getBytes(StandardCharsets.UTF_8));
+        saida.write(dados);
+        saida.flush();
+    }
+
     private File localizarArquivo(String caminhoRelativo) {
         String[] tentativas = {
             "web" + caminhoRelativo,
@@ -198,8 +311,12 @@ public class ClienteHandler implements Runnable {
         if (texto == null) return "";
         return texto.replace("\\", "\\\\")
                     .replace("\"", "\\\"")
-                    .replace("\r", "")
-                    .replace("\n", " ");
+                    .replace("\r", "\\r")
+                    .replace("\n", "\\n")
+                    .replace("\t", "\\t")
+                    .replace("\b", "\\b")
+                    .replace("\f", "\\f")
+                    .replaceAll("[\\x00-\\x1F]", " ");
     }
 
     private String definirTipoConteudo(String caminho) {

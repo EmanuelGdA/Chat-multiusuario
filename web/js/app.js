@@ -6,7 +6,82 @@ let contatosOcultos = JSON.parse(
   localStorage.getItem("contatos_ocultos") || "[]",
 );
 let ultimasMensagensDaConversa = [];
-let totalMensagensAnterior = 0;
+let maiorIdRecebido;
+let registroUsuario;
+let consultaMensagens;
+let mensagensCarregadas = [];
+let conversaRenderizada;
+let leitura;
+
+const btnContactProfile = document.getElementById("btnContactProfile");
+const contactProfile = document.getElementById("contactProfile");
+const btnSearch = document.getElementById("btnSearch");
+const searchPanel = document.getElementById("conversationSearch");
+const searchInput = document.getElementById("searchMessages");
+const searchStatus = document.getElementById("searchStatus");
+const searchPrev = document.getElementById("searchPrev");
+const searchNext = document.getElementById("searchNext");
+let resultadosBusca = [];
+let indiceBusca = -1;
+
+function chaveConversa(conversa) {
+  return conversa === "GERAL" ? conversa : soDigitos(conversa);
+}
+
+function separarRemetente(remetente) {
+  const abertura = remetente.lastIndexOf(" (");
+  if (abertura === -1 || !remetente.endsWith(")")) {
+    return { nome: remetente, telefone: "" };
+  }
+  return {
+    nome: remetente.slice(0, abertura),
+    telefone: soDigitos(remetente.slice(abertura + 2, -1)),
+  };
+}
+
+function telefoneRemetente(remetente) {
+  return separarRemetente(remetente).telefone;
+}
+
+async function buscarPerfil(telefone) {
+  const resposta = await fetch(`/api/perfil?telefone=${encodeURIComponent(telefone)}`);
+  if (!resposta.ok) throw new Error("Perfil indisponível");
+  return resposta.json();
+}
+
+function textoAvatar(nome, avatar) {
+  if (avatar && avatar !== "initials") return avatar;
+  return nome.trim().split(/\s+/).slice(0, 2)
+    .map((parte) => Array.from(parte)[0]).join("").toLocaleUpperCase("pt-BR") || "👤";
+}
+
+async function abrirPerfilContato(telefone, nome) {
+  const titulo = document.getElementById("contactProfileName");
+  const bio = document.getElementById("contactProfileBio");
+  const avatar = document.getElementById("contactAvatar");
+  titulo.textContent = nome || "Perfil do contato";
+  document.getElementById("contactProfilePhone").textContent = telefone;
+  avatar.textContent = textoAvatar(nome || "");
+  bio.textContent = "Carregando perfil…";
+  contactProfile.showModal();
+  const pedido = Symbol();
+  contactProfile.pedido = pedido;
+  try {
+    const perfil = await buscarPerfil(telefone);
+    if (contactProfile.pedido !== pedido || !contactProfile.open) return;
+    titulo.textContent = perfil.nome;
+    avatar.textContent = textoAvatar(perfil.nome, perfil.avatar);
+    bio.textContent = perfil.bio || "Ainda sem descrição.";
+  } catch {
+    if (contactProfile.pedido === pedido && contactProfile.open) {
+      bio.textContent = "Não foi possível carregar o perfil.";
+    }
+  }
+}
+
+btnContactProfile.addEventListener("click", () => {
+  abrirPerfilContato(chaveConversa(conversaAtiva), "");
+});
 
 const loginModal = document.getElementById("loginModal");
 const inputName = document.getElementById("inputName");
@@ -20,31 +95,77 @@ const profileForm = document.getElementById("profileForm");
 const profileAvatar = document.getElementById("profileAvatar");
 const profileBio = document.getElementById("profileBio");
 
-btnMyProfile.addEventListener("click", () => {
+const profileError = document.getElementById("profileError");
+const btnSaveProfile = profileForm.querySelector('[type="submit"]');
+
+btnMyProfile.addEventListener("click", async () => {
   document.getElementById("profileName").textContent = meuNome;
   document.getElementById("profilePhone").textContent = meuTelefone;
   profileAvatar.value = localStorage.getItem("chat_profile_avatar") || "initials";
   profileBio.value = localStorage.getItem("chat_profile_bio") || "";
+  profileError.textContent = "";
   profileDialog.showModal();
+  const valoresIniciais = [profileAvatar.value, profileBio.value];
+  const pedido = Symbol();
+  profileDialog.pedido = pedido;
+  try {
+    await registroUsuario;
+    const perfil = await buscarPerfil(soDigitos(meuTelefone));
+    if (profileDialog.open && profileDialog.pedido === pedido && perfil.avatar
+        && profileAvatar.value === valoresIniciais[0] && profileBio.value === valoresIniciais[1]
+        && !btnSaveProfile.disabled) {
+      profileAvatar.value = perfil.avatar;
+      profileBio.value = perfil.bio;
+      myAvatar.textContent = textoAvatar(meuNome, perfil.avatar);
+    }
+  } catch {
+    // O formulário mantém os dados locais se o servidor estiver indisponível.
+  }
 });
 
 document.getElementById("btnCloseProfile").addEventListener("click", () => {
   profileDialog.close();
 });
 
-profileForm.addEventListener("submit", (event) => {
+profileForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  localStorage.setItem("chat_profile_avatar", profileAvatar.value);
-  localStorage.setItem("chat_profile_bio", profileBio.value.trim());
-  atualizarAvatar();
-  profileDialog.close();
+  const telefone = soDigitos(meuTelefone);
+  const avatar = profileAvatar.value;
+  const bio = profileBio.value.trim();
+  const chaveLocal = `chat_profile_key_${telefone}`;
+  let chave = localStorage.getItem(chaveLocal);
+  if (!chave) {
+    chave = Array.from(crypto.getRandomValues(new Uint8Array(32)),
+      (byte) => byte.toString(16).padStart(2, "0")).join("");
+    localStorage.setItem(chaveLocal, chave);
+  }
+
+  btnSaveProfile.disabled = true;
+  profileError.textContent = "Salvando perfil…";
+  try {
+    await registroUsuario;
+    const resposta = await fetch("/api/perfil", {
+      method: "POST",
+      body: new URLSearchParams({ telefone, avatar, bio, chave }),
+    });
+    if (resposta.status === 403) {
+      profileError.textContent = "Use o navegador em que este perfil foi publicado pela primeira vez.";
+      return;
+    }
+    if (!resposta.ok) throw new Error("Falha ao salvar perfil");
+    localStorage.setItem("chat_profile_avatar", avatar);
+    localStorage.setItem("chat_profile_bio", bio);
+    atualizarAvatar();
+    profileDialog.close();
+  } catch {
+    profileError.textContent = "Não foi possível salvar o perfil. Tente novamente.";
+  } finally {
+    btnSaveProfile.disabled = false;
+  }
 });
 
 function atualizarAvatar() {
-  const avatar = localStorage.getItem("chat_profile_avatar");
-  const iniciais = meuNome.split(/\s+/).slice(0, 2)
-    .map((parte) => Array.from(parte)[0]).join("").toLocaleUpperCase("pt-BR");
-  myAvatar.textContent = avatar && avatar !== "initials" ? avatar : iniciais;
+  myAvatar.textContent = textoAvatar(meuNome, localStorage.getItem("chat_profile_avatar"));
 }
 
 const myNameDisplay = document.getElementById("myNameDisplay");
@@ -102,6 +223,7 @@ btnEnter.addEventListener("click", () => {
   localStorage.setItem("chat_telefone", tel);
   atualizarPerfil(nome, tel);
   loginModal.style.display = "none";
+  carregarMensagens();
 });
 
 // Botão para sair, limpar dados locais e cadastrar outro número
@@ -109,7 +231,11 @@ const btnResetProfile = document.getElementById("btnResetProfile");
 if (btnResetProfile) {
   btnResetProfile.addEventListener("click", () => {
     if (confirm("Deseja sair deste perfil e criar ou usar outro número?")) {
-      localStorage.clear();
+      for (const chave of Object.keys(localStorage)) {
+        if (!chave.startsWith("chat_profile_key_") && !chave.startsWith("chat_read_")) {
+          localStorage.removeItem(chave);
+        }
+      }
       location.reload();
     }
   });
@@ -117,9 +243,11 @@ if (btnResetProfile) {
 
 function atualizarPerfil(nome, tel) {
   // Registra esse número no banco de dados para os outros poderem adicionar você
-  fetch(
+  registroUsuario = fetch(
     `/api/registrar-usuario?nome=${encodeURIComponent(nome)}&telefone=${encodeURIComponent(tel)}`,
-  );
+  ).catch(() => null);
+  leitura = JSON.parse(localStorage.getItem(`chat_read_${soDigitos(tel)}`) || "null");
+  maiorIdRecebido = undefined;
 
   meuNome = nome;
   meuTelefone = tel;
@@ -168,13 +296,20 @@ btnAddContact.addEventListener("click", async () => {
     contatosOcultos = contatosOcultos.filter((n) => n !== limpo);
     localStorage.setItem("contatos_ocultos", JSON.stringify(contatosOcultos));
 
-    adicionarContatoNaLista(formatado);
+    adicionarContatoNaLista(formatado, dados.nome, true);
   } catch (e) {
     alert("Erro ao verificar o número no servidor.");
   }
 });
 
-function adicionarContatoNaLista(numero) {
+function adicionarContatoNaLista(numero, nome, selecionar = false) {
+  const existente = Array.from(contactsList.querySelectorAll(".contact-item"))
+    .find((item) => chaveConversa(item.dataset.destinatario) === soDigitos(numero));
+  if (existente) {
+    if (selecionar) selecionarConversa(numero, nome || numero, existente);
+    return;
+  }
+
   const item = document.createElement("div");
   item.className = "contact-item";
   item.dataset.destinatario = numero;
@@ -182,12 +317,14 @@ function adicionarContatoNaLista(numero) {
         <div style="display:flex; align-items:center; gap:12px;">
             <div class="avatar-chat">📱</div>
             <div class="contact-info">
-                <h4>${numero}</h4>
+                <h4></h4>
                 <p>Conversa Privada</p>
             </div>
         </div>
+        <span class="unread-badge" hidden></span>
         <button class="btn-del-contact" title="Remover contato">🗑️</button>
     `;
+  item.querySelector("h4").textContent = nome || numero;
 
   // Botão para remover contato da barra
   const btnDel = item.querySelector(".btn-del-contact");
@@ -211,10 +348,13 @@ function adicionarContatoNaLista(numero) {
         }
 
         // 2. Apaga as mensagens dele no banco
-        const promises = ultimasMensagensDaConversa.map((m) =>
-          fetch(`/api/apagar-mensagem?id=${m.id}`),
-        );
-        await Promise.all(promises);
+        const meuNum = soDigitos(meuTelefone);
+        const doContato = mensagensCarregadas.filter((msg) => {
+          const de = telefoneRemetente(msg.remetente);
+          const para = soDigitos(msg.destinatario);
+          return (de === meuNum && para === numLimpo) || (de === numLimpo && para === meuNum);
+        });
+        await Promise.all(doContato.map((msg) => fetch(`/api/apagar-mensagem?id=${msg.id}`)));
 
         // 3. Remove da tela e volta para a Sala Geral
         item.remove();
@@ -229,15 +369,21 @@ function adicionarContatoNaLista(numero) {
   }
 
   item.addEventListener("click", () =>
-    selecionarConversa(numero, `📱 ${numero}`, item),
+    selecionarConversa(numero, nome || numero, item),
   );
   contactsList.appendChild(item);
-  selecionarConversa(numero, `📱 ${numero}`, item);
+  if (selecionar) selecionarConversa(numero, nome || numero, item);
 }
 
 // Troca de conversa ao clicar no contato
 function selecionarConversa(destinatario, titulo, elemento) {
+  if (chaveConversa(destinatario) !== chaveConversa(conversaAtiva)) {
+    ultimasMensagensDaConversa = [];
+    messagesContainer.replaceChildren();
+    fecharBusca(false);
+  }
   conversaAtiva = destinatario;
+  btnContactProfile.hidden = destinatario === "GERAL";
   document
     .querySelectorAll(".contact-item")
     .forEach((el) => el.classList.remove("active"));
@@ -246,7 +392,8 @@ function selecionarConversa(destinatario, titulo, elemento) {
   const headerTitle = document.querySelector(".chat-header h2");
   if (headerTitle) headerTitle.textContent = titulo;
 
-  carregarMensagens(); // Recarrega filtrando a conversa escolhida
+  if (mensagensCarregadas.length) renderizarMensagens(mensagensCarregadas);
+  carregarMensagens();
 }
 
 // Clique na Sala Geral original
@@ -295,8 +442,9 @@ if (btnClearChat) {
       )
     ) {
       // Esvazia a tela imediatamente
-      messagesContainer.innerHTML = "";
-      cacheHistorico = "";
+      messagesContainer.replaceChildren();
+      conversaRenderizada = undefined;
+      await consultaMensagens;
 
       if (conversaAtiva === "GERAL") {
         // Na Sala Geral apaga tudo que é geral
@@ -314,103 +462,159 @@ if (btnClearChat) {
   });
 }
 
-// Carregar mensagens salvas do MySQL
-async function carregarMensagens() {
-  try {
-    const res = await fetch("/api/mensagens");
-    const mensagens = await res.json();
-    renderizarMensagens(mensagens);
-  } catch (e) {
-    console.error("Erro ao buscar histórico:", e);
+// Mantém uma consulta por vez para que uma resposta antiga não sobrescreva a atual.
+function carregarMensagens() {
+  if (!consultaMensagens) {
+    consultaMensagens = fetch("/api/mensagens", { cache: "no-store" })
+      .then((resposta) => resposta.json())
+      .then((mensagens) => {
+        if (!Array.isArray(mensagens)) throw new Error("Histórico inválido");
+        mensagensCarregadas = mensagens;
+        renderizarMensagens(mensagens);
+      })
+      .catch((erro) => console.error("Erro ao buscar histórico:", erro))
+      .finally(() => { consultaMensagens = undefined; });
   }
+  return consultaMensagens;
 }
 
 function renderizarMensagens(mensagens) {
-  // 1. PRIMEIRO cria a função soDigitos:
-  const soDigitos = (s) => (s || "").replace(/\D/g, "");
+  const meuNum = soDigitos(meuTelefone);
+  if (!meuNum) return;
 
-  // 2. DEPOIS verifica o som usando ela:
-  if (mensagens.length > totalMensagensAnterior && totalMensagensAnterior > 0) {
-    const ultima = mensagens[mensagens.length - 1];
-    if (ultima && !ultima.remetente.includes(soDigitos(meuTelefone))) {
-      tocarSomNotificacao();
+  const ativa = chaveConversa(conversaAtiva);
+  const maiorId = mensagens.at(-1)?.id || 0;
+  const leituraAnterior = JSON.stringify(leitura);
+  leitura ||= { inicio: maiorId, conversas: {} };
+  const naTela = document.visibilityState === "visible";
+  const naoLidas = new Map();
+  const mensagensDaConversa = [];
+  let notificar = false;
+
+  for (const msg of mensagens) {
+    const remetente = telefoneRemetente(msg.remetente);
+    const destinatario = chaveConversa(msg.destinatario);
+    const minha = remetente === meuNum;
+    const geral = !msg.destinatario || destinatario === "GERAL";
+    if (!geral && !minha && destinatario !== meuNum) continue;
+
+    const conversa = geral ? "GERAL" : minha ? destinatario : remetente;
+    if (!conversa || contatosOcultos.includes(conversa)) continue;
+    if (!geral && !minha) {
+      adicionarContatoNaLista(conversa, separarRemetente(msg.remetente).nome);
+    }
+
+    const lidaAte = leitura.conversas[conversa] ?? leitura.inicio;
+    if (conversa === ativa) {
+      mensagensDaConversa.push(msg);
+      if (naTela && msg.id > lidaAte) leitura.conversas[conversa] = msg.id;
+    }
+    if (!minha && msg.id > lidaAte && (conversa !== ativa || !naTela)) {
+      naoLidas.set(conversa, (naoLidas.get(conversa) || 0) + 1);
+    }
+    if (!minha && maiorIdRecebido !== undefined && msg.id > maiorIdRecebido) {
+      notificar = true;
     }
   }
-  totalMensagensAnterior = mensagens.length;
-  messagesContainer.innerHTML = "";
 
-  const meuNum = soDigitos(meuTelefone);
-  const conversaNum = soDigitos(conversaAtiva);
+  maiorIdRecebido = Math.max(maiorId, maiorIdRecebido ?? 0);
+  if (notificar) tocarSomNotificacao();
 
-  // 1. Detecta mensagens recebidas e adiciona contato na lateral se não existir
-  mensagens.forEach((msg) => {
-    const destNum = soDigitos(msg.destinatario);
-    const remNum = soDigitos(msg.remetente);
+  const leituraAtual = JSON.stringify(leitura);
+  if (leituraAtual !== leituraAnterior) {
+    localStorage.setItem(`chat_read_${meuNum}`, leituraAtual);
+  }
 
-    // Se o contato for apagado, não ressuscita ele na lista
-    if (contatosOcultos.includes(remNum)) return;
+  for (const item of contactsList.querySelectorAll(".contact-item")) {
+    const badge = item.querySelector(".unread-badge");
+    const total = naoLidas.get(chaveConversa(item.dataset.destinatario)) || 0;
+    badge.hidden = total === 0;
+    badge.textContent = total;
+    badge.setAttribute("aria-label", `${total} mensagens não lidas`);
+  }
 
-    if (destNum === meuNum && remNum && remNum !== meuNum) {
-      const jaExiste = Array.from(
-        document.querySelectorAll(".contact-item"),
-      ).some((el) => soDigitos(el.dataset.destinatario) === remNum);
+  const assinatura = JSON.stringify([ativa, mensagensDaConversa]);
+  if (assinatura === conversaRenderizada) return;
+  const anterior = messagesContainer.scrollTop;
+  const estavaNoFim = messagesContainer.scrollHeight - anterior - messagesContainer.clientHeight < 40;
+  const idEncontrado = resultadosBusca[indiceBusca]?.dataset.messageId;
 
-      if (!jaExiste) {
-        const item = document.createElement("div");
-        item.className = "contact-item";
-        item.dataset.destinatario = remNum;
-        item.innerHTML = `
-                    <div style="display:flex; align-items:center; gap:12px;">
-                        <div class="avatar-chat">📱</div>
-                        <div class="contact-info">
-                            <h4>${msg.remetente}</h4>
-                            <p>Conversa Privada</p>
-                        </div>
-                    </div>
-                    <button class="btn-del-contact" title="Remover contato">🗑️</button>
-                `;
-        item.addEventListener("click", () =>
-          selecionarConversa(remNum, `📱 ${msg.remetente}`, item),
-        );
-        contactsList.appendChild(item);
-      }
-    }
-  });
-
-  // 2. Filtra as mensagens pertencentes à conversa atual
-  const mensagensFiltradas = mensagens.filter((msg) => {
-    const destNum = soDigitos(msg.destinatario);
-    const remNum = soDigitos(msg.remetente);
-
-    if (conversaAtiva === "GERAL") {
-      return !msg.destinatario || msg.destinatario === "GERAL";
-    } else {
-      const enviadaPorMim = remNum.includes(meuNum) && destNum === conversaNum;
-      const enviadaParaMim = remNum.includes(conversaNum) && destNum === meuNum;
-      return enviadaPorMim || enviadaParaMim;
-    }
-  });
-
-  // Guarda as mensagens ativas da tela
-  ultimasMensagensDaConversa = mensagensFiltradas;
-
-  // 3. Renderiza os balões na tela
-  mensagensFiltradas.forEach((msg) => {
-    const remNum = soDigitos(msg.remetente);
-    const isMe = meuNum && remNum.includes(meuNum);
-    adicionarBalaoNaTela(
-      msg.remetente,
-      msg.conteudo,
-      msg.horario,
-      isMe,
-      msg.id,
-    );
-  });
-
-  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  conversaRenderizada = assinatura;
+  ultimasMensagensDaConversa = mensagensDaConversa;
+  messagesContainer.replaceChildren();
+  for (const msg of mensagensDaConversa) {
+    adicionarBalaoNaTela(msg, telefoneRemetente(msg.remetente) === meuNum);
+  }
+  messagesContainer.scrollTop = estavaNoFim && searchPanel.hidden
+    ? messagesContainer.scrollHeight : anterior;
+  if (!searchPanel.hidden) atualizarBusca(idEncontrado, false);
 }
 
-// Inicia buscando mensagens e atualiza a cada 1.5s
+function fecharBusca(devolverFoco = true) {
+  searchPanel.hidden = true;
+  btnSearch.setAttribute("aria-expanded", "false");
+  searchInput.value = "";
+  atualizarBusca();
+  if (devolverFoco) btnSearch.focus();
+}
+
+function textoBusca(texto) {
+  return texto.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase("pt-BR");
+}
+
+function atualizarBusca(idPreferido, rolar = true) {
+  messagesContainer.querySelectorAll(".search-match, .search-current").forEach((row) => {
+    row.classList.remove("search-match", "search-current");
+  });
+  const termo = textoBusca(searchInput.value.trim());
+  resultadosBusca = termo
+    ? Array.from(messagesContainer.querySelectorAll(".message-row"))
+      .filter((row) => textoBusca(row.querySelector(".bubble-text").textContent).includes(termo))
+    : [];
+  resultadosBusca.forEach((row) => row.classList.add("search-match"));
+  const preferido = resultadosBusca.findIndex((row) => row.dataset.messageId === idPreferido);
+  indiceBusca = preferido >= 0 ? preferido : resultadosBusca.length - 1;
+  mostrarResultadoBusca(rolar);
+}
+
+function mostrarResultadoBusca(rolar = true) {
+  const resultado = resultadosBusca[indiceBusca];
+  searchPrev.disabled = searchNext.disabled = resultadosBusca.length < 2;
+  searchStatus.textContent = resultado ? `${indiceBusca + 1} de ${resultadosBusca.length}`
+    : searchInput.value.trim() ? "Sem resultados" : "";
+  if (resultado) {
+    resultado.classList.add("search-current");
+    if (rolar) resultado.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function navegarBusca(passo) {
+  if (!resultadosBusca.length) return;
+  resultadosBusca[indiceBusca].classList.remove("search-current");
+  indiceBusca = (indiceBusca + passo + resultadosBusca.length) % resultadosBusca.length;
+  mostrarResultadoBusca();
+}
+
+btnSearch.addEventListener("click", () => {
+  if (!searchPanel.hidden) {
+    fecharBusca();
+    return;
+  }
+  searchPanel.hidden = false;
+  btnSearch.setAttribute("aria-expanded", "true");
+  atualizarBusca();
+  searchInput.focus();
+});
+document.getElementById("searchClose").addEventListener("click", () => fecharBusca());
+searchInput.addEventListener("input", () => atualizarBusca());
+searchInput.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") fecharBusca();
+  if (event.key === "Enter") navegarBusca(event.shiftKey ? -1 : 1);
+});
+searchPrev.addEventListener("click", () => navegarBusca(-1));
+searchNext.addEventListener("click", () => navegarBusca(1));
+
+document.addEventListener("visibilitychange", carregarMensagens);
 carregarMensagens();
 setInterval(carregarMensagens, 1500);
 
@@ -429,28 +633,77 @@ if (btnMenuToggle && sidebar) {
   });
 }
 
-// === FUNÇÃO QUE CRIA E DESENHA O BALÃO NA TELA ===
-function adicionarBalaoNaTela(remetente, conteudo, horario, isMe, idMsg = 0) {
+function adicionarBalaoNaTela(msg, minha) {
   const row = document.createElement("div");
-  row.className = `message-row ${isMe ? "me" : "other"}`;
-
-  // Mostra o botãozinho ✕ para apagar se for uma mensagem que você enviou
-  const btnApagar =
-    isMe && idMsg
-      ? `<button class="btn-delete-msg" onclick="apagarMensagem(${idMsg})" title="Apagar esta mensagem">✕</button>`
-      : "";
-
+  row.className = `message-row ${minha ? "me" : "other"}`;
+  row.dataset.messageId = msg.id;
   row.innerHTML = `
-        <div class="bubble">
-            ${btnApagar}
-            <div class="bubble-sender">${remetente}</div>
-            <div class="bubble-text">${conteudo}</div>
-            <div class="bubble-time">${horario}</div>
-        </div>
-    `;
+    <div class="bubble">
+      <details class="message-actions">
+        <summary aria-label="Opções da mensagem">⋯</summary>
+        <div class="message-options"><button type="button" class="copy-message">Copiar mensagem</button></div>
+      </details>
+      <div class="bubble-sender"></div>
+      <div class="bubble-text"></div>
+      <div class="bubble-time"></div>
+    </div>
+  `;
 
+  const { nome, telefone } = separarRemetente(msg.remetente);
+  const remetente = row.querySelector(".bubble-sender");
+  if (telefone && !minha) {
+    const perfil = document.createElement("button");
+    perfil.type = "button";
+    perfil.className = "sender-profile";
+    perfil.textContent = msg.remetente;
+    perfil.addEventListener("click", () => abrirPerfilContato(telefone, nome));
+    remetente.appendChild(perfil);
+  } else {
+    remetente.textContent = msg.remetente;
+  }
+  row.querySelector(".bubble-text").textContent = msg.conteudo;
+  row.querySelector(".bubble-time").textContent = msg.horario;
+
+  const menu = row.querySelector(".message-actions");
+  row.querySelector(".copy-message").addEventListener("click", async (event) => {
+    const botao = event.currentTarget;
+    const status = document.getElementById("clipboardStatus");
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(msg.conteudo);
+      } else {
+        const campo = document.createElement("textarea");
+        campo.value = msg.conteudo;
+        campo.className = "sr-only";
+        campo.readOnly = true;
+        document.body.appendChild(campo);
+        campo.select();
+        try {
+          if (!document.execCommand("copy")) throw new Error("Cópia indisponível");
+        } finally {
+          campo.remove();
+        }
+      }
+      status.textContent = "Mensagem copiada.";
+      botao.textContent = "Copiada!";
+      setTimeout(() => { botao.textContent = "Copiar mensagem"; }, 1500);
+    } catch {
+      status.textContent = "Não foi possível copiar a mensagem.";
+      botao.textContent = "Falha ao copiar";
+    }
+  });
+
+  if (minha && msg.id) {
+    const apagar = document.createElement("button");
+    apagar.type = "button";
+    apagar.textContent = "Apagar mensagem";
+    apagar.addEventListener("click", () => {
+      menu.open = false;
+      window.apagarMensagem(msg.id);
+    });
+    row.querySelector(".message-options").appendChild(apagar);
+  }
   messagesContainer.appendChild(row);
-  messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
 // Função para deletar uma mensagem específica no banco

@@ -9,6 +9,76 @@ import java.util.Collections;
 import java.util.List;
 
 public class MensagemRepository {
+    public record Perfil(String nome, String avatar, String bio) {}
+
+    private boolean tabelaPerfisPronta;
+
+    private synchronized void prepararTabelaPerfis(Connection conn) throws SQLException {
+        if (tabelaPerfisPronta) return;
+
+        try (Statement stmt = conn.createStatement()) {
+            stmt.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS perfis_contato (
+                    telefone VARCHAR(32) PRIMARY KEY,
+                    avatar VARCHAR(16) NOT NULL,
+                    bio VARCHAR(140) NOT NULL,
+                    chave CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL
+                ) CHARACTER SET utf8mb4
+                """);
+            tabelaPerfisPronta = true;
+        }
+    }
+
+    public Perfil buscarPerfil(String telefone) throws SQLException {
+        Connection conn = ConexaoFactory.getConexao();
+        prepararTabelaPerfis(conn);
+        String sql = """
+            SELECT u.nome, p.avatar, p.bio
+            FROM usuarios u LEFT JOIN perfis_contato p ON p.telefone = ?
+            WHERE u.telefone = ?
+            """;
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, telefone);
+            stmt.setString(2, telefone);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() ? new Perfil(rs.getString("nome"), rs.getString("avatar"), rs.getString("bio")) : null;
+            }
+        }
+    }
+
+    public boolean salvarPerfil(String telefone, String avatar, String bio, String chave) throws SQLException {
+        Connection conn = ConexaoFactory.getConexao();
+        prepararTabelaPerfis(conn);
+        String sql = """
+            INSERT INTO perfis_contato (telefone, avatar, bio, chave)
+            SELECT ?, ?, ?, ? FROM usuarios WHERE telefone = ?
+            ON DUPLICATE KEY UPDATE avatar = IF(chave = ?, ?, avatar), bio = IF(chave = ?, ?, bio)
+            """;
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, telefone);
+            stmt.setString(2, avatar);
+            stmt.setString(3, bio);
+            stmt.setString(4, chave);
+            stmt.setString(5, telefone);
+            stmt.setString(6, chave);
+            stmt.setString(7, avatar);
+            stmt.setString(8, chave);
+            stmt.setString(9, bio);
+            stmt.executeUpdate();
+        }
+
+        try (PreparedStatement stmt = conn.prepareStatement(
+                "SELECT 1 FROM perfis_contato WHERE telefone = ? AND chave = ?")) {
+            stmt.setString(1, telefone);
+            stmt.setString(2, chave);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
 
     public void salvar(Mensagem mensagem) {
         String sql = "INSERT INTO mensagens (remetente, destinatario, conteudo, horario) VALUES (?, ?, ?, ?)";
