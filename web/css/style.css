@@ -236,6 +236,10 @@ body.dark-mode .contact-presence[data-state="typing"] {
     color: #92400e;
 }
 
+.contact-presence:not([hidden]) + .connection-status[data-state="online"] {
+    display: none;
+}
+
 .connection-status[data-state="online"] {
     color: #15803d;
 }
