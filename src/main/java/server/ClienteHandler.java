@@ -45,6 +45,10 @@ public class ClienteHandler implements Runnable {
                 salvarPerfil(leitor, saida);
                 return;
             }
+            if ("POST".equals(metodo) && "/api/presenca".equals(rota)) {
+                atualizarPresenca(leitor, saida);
+                return;
+            }
             if (!"GET".equals(metodo)) return;
 
             if (rota.startsWith("/api/perfil?")) {
@@ -181,31 +185,7 @@ public class ClienteHandler implements Runnable {
 
     private void salvarPerfil(BufferedReader leitor, OutputStream saida) throws IOException {
         try {
-            int tamanho = -1;
-            String cabecalho;
-            while ((cabecalho = leitor.readLine()) != null && !cabecalho.isEmpty()) {
-                if (cabecalho.regionMatches(true, 0, "Content-Length:", 0, 15)) {
-                    tamanho = Integer.parseInt(cabecalho.substring(15).trim());
-                }
-            }
-            // URLSearchParams envia um formulário ASCII com valores codificados.
-            if (cabecalho == null || tamanho < 1 || tamanho > 4096) {
-                responderJson(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
-                return;
-            }
-            char[] corpo = new char[tamanho];
-            int recebidos = 0;
-            while (recebidos < tamanho) {
-                int lidos = leitor.read(corpo, recebidos, tamanho - recebidos);
-                if (lidos == -1) break;
-                recebidos += lidos;
-            }
-            if (recebidos != tamanho) {
-                responderJson(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
-                return;
-            }
-
-            Map<String, String> campos = lerParametros(new String(corpo));
+            Map<String, String> campos = lerFormulario(leitor);
             String telefone = campos.getOrDefault("telefone", "");
             String avatar = campos.getOrDefault("avatar", "");
             String bio = campos.getOrDefault("bio", "").strip();
@@ -227,6 +207,55 @@ public class ClienteHandler implements Runnable {
             System.err.println("Erro ao salvar perfil: " + e.getMessage());
             responderJson(saida, "503 Service Unavailable", "{\"status\":\"indisponivel\"}");
         }
+    }
+
+    private void atualizarPresenca(BufferedReader leitor, OutputStream saida) throws IOException {
+        try {
+            Map<String, String> campos = lerFormulario(leitor);
+            String sessao = campos.getOrDefault("sessao", "");
+            String telefone = campos.getOrDefault("telefone", "");
+            String contato = campos.getOrDefault("contato", "");
+            boolean digitando = "true".equals(campos.get("digitando"));
+            if (!sessao.matches("[0-9a-f]{32}") || !telefone.matches("[0-9]{1,32}")
+                    || (!contato.isEmpty() && !contato.matches("[0-9]{1,32}"))
+                    || telefone.equals(contato) || (digitando && contato.isEmpty())) {
+                throw new IllegalArgumentException("Presença inválida");
+            }
+
+            Presenca.Estado estado = servidor.getPresenca().atualizar(sessao, telefone, contato, digitando);
+            String valor = switch (estado) {
+                case OFFLINE -> "offline";
+                case ONLINE -> "online";
+                case DIGITANDO -> "typing";
+            };
+            responderJson(saida, "200 OK", "{\"estado\":\"" + valor + "\"}");
+        } catch (IllegalArgumentException e) {
+            responderJson(saida, "400 Bad Request", "{\"status\":\"invalido\"}");
+        }
+    }
+
+    private Map<String, String> lerFormulario(BufferedReader leitor) throws IOException {
+        int tamanho = -1;
+        String cabecalho;
+        while ((cabecalho = leitor.readLine()) != null && !cabecalho.isEmpty()) {
+            if (cabecalho.regionMatches(true, 0, "Content-Length:", 0, 15)) {
+                tamanho = Integer.parseInt(cabecalho.substring(15).trim());
+            }
+        }
+
+        // URLSearchParams envia um formulário ASCII com valores codificados.
+        if (cabecalho == null || tamanho < 1 || tamanho > 4096) {
+            throw new IllegalArgumentException("Tamanho do formulário inválido");
+        }
+
+        char[] corpo = new char[tamanho];
+        int recebidos = 0;
+        while (recebidos < tamanho) {
+            int lidos = leitor.read(corpo, recebidos, tamanho - recebidos);
+            if (lidos == -1) throw new IllegalArgumentException("Formulário incompleto");
+            recebidos += lidos;
+        }
+        return lerParametros(new String(corpo));
     }
 
     private Map<String, String> lerParametros(String query) {

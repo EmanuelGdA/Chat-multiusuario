@@ -193,6 +193,44 @@ body {
     color: #0f172a;
 }
 
+.contact-presence {
+    width: fit-content;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.contact-presence::before {
+    content: "";
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 5px;
+    border-radius: 50%;
+    background-color: currentColor;
+    vertical-align: 1px;
+}
+
+.contact-presence[data-state="online"] {
+    color: #15803d;
+}
+
+.contact-presence[data-state="typing"] {
+    color: #1d4ed8;
+}
+
+body.dark-mode .contact-presence {
+    color: #cbd5e1;
+}
+
+body.dark-mode .contact-presence[data-state="online"] {
+    color: #86efac;
+}
+
+body.dark-mode .contact-presence[data-state="typing"] {
+    color: #93c5fd;
+}
+
 .connection-status {
     font-size: 12px;
     color: #92400e;

@@ -180,6 +180,89 @@ const connectionStatus = document.getElementById("connectionStatus");
 const sendStatus = document.getElementById("sendStatus");
 const btnMenuToggle = document.getElementById("btnMenuToggle");
 const sidebar = document.getElementById("chatSidebar");
+const contactPresence = document.getElementById("contactPresence");
+const abaPresenca = Array.from(crypto.getRandomValues(new Uint8Array(16)),
+  (byte) => byte.toString(16).padStart(2, "0")).join("");
+const textosPresenca = {
+  checking: "Verificando presença…",
+  unavailable: "Presença indisponível",
+  offline: "Offline",
+  online: "Online",
+  typing: "Digitando…",
+};
+let consultaPresenca;
+let presencaPendente = false;
+let pausaDigitacao;
+
+function mostrarPresenca(estado) {
+  if (contactPresence.dataset.state === estado) return;
+  contactPresence.dataset.state = estado;
+  contactPresence.textContent = textosPresenca[estado];
+}
+
+function sincronizarPresenca() {
+  const telefone = soDigitos(meuTelefone);
+  if (!meuIdentificador || !telefone) return;
+
+  const ativa = chaveConversa(conversaAtiva);
+  const contato = ativa === "GERAL" ? "" : ativa;
+  if (!navigator.onLine) {
+    if (contato) mostrarPresenca("unavailable");
+    return;
+  }
+  if (consultaPresenca) {
+    presencaPendente = true;
+    return;
+  }
+
+  consultaPresenca = fetch("/api/presenca", {
+    method: "POST",
+    signal: AbortSignal.timeout(5000),
+    body: new URLSearchParams({
+      sessao: abaPresenca,
+      telefone,
+      contato,
+      digitando: Boolean(contato && pausaDigitacao && !document.hidden),
+    }),
+  })
+    .then((resposta) => {
+      if (!resposta.ok) throw new Error("Presença indisponível");
+      return resposta.json();
+    })
+    .then(({ estado }) => {
+      if (contato && ativa === chaveConversa(conversaAtiva) && navigator.onLine) {
+        mostrarPresenca(Object.hasOwn(textosPresenca, estado) ? estado : "unavailable");
+      }
+    })
+    .catch(() => {
+      if (contato && ativa === chaveConversa(conversaAtiva)) mostrarPresenca("unavailable");
+    })
+    .finally(() => {
+      consultaPresenca = undefined;
+      if (presencaPendente) {
+        presencaPendente = false;
+        sincronizarPresenca();
+      }
+    });
+}
+
+function pararDigitacao(notificar = true) {
+  if (!pausaDigitacao) return;
+  clearTimeout(pausaDigitacao);
+  pausaDigitacao = undefined;
+  if (notificar) sincronizarPresenca();
+}
+
+function registrarDigitacao() {
+  if (conversaAtiva === "GERAL" || !inputMessage.value.trim()) {
+    pararDigitacao();
+    return;
+  }
+  const comecou = !pausaDigitacao;
+  clearTimeout(pausaDigitacao);
+  pausaDigitacao = setTimeout(pararDigitacao, 3000);
+  if (comecou) sincronizarPresenca();
+}
 
 function chaveRascunho(conversa) {
   return `chat_draft_${soDigitos(meuTelefone)}_${chaveConversa(conversa)}`;
@@ -286,6 +369,7 @@ function atualizarPerfil(nome, tel) {
   btnMyProfile.disabled = false;
   inputMessage.value = sessionStorage.getItem(chaveRascunho(conversaAtiva)) || "";
   if (!window.matchMedia("(max-width: 768px)").matches) inputMessage.focus();
+  sincronizarPresenca();
 }
 
 // Adicionar novos contatos na lista (validando se o número existe no banco)
@@ -409,6 +493,8 @@ function adicionarContatoNaLista(numero, nome, selecionar = false) {
 function selecionarConversa(destinatario, titulo, elemento) {
   definirMenuConversas(false);
   if (chaveConversa(destinatario) !== chaveConversa(conversaAtiva)) {
+    pararDigitacao(false);
+    mostrarPresenca("checking");
     guardarRascunho();
     inputMessage.value = sessionStorage.getItem(chaveRascunho(destinatario)) || "";
     sendStatus.textContent = "";
@@ -418,6 +504,8 @@ function selecionarConversa(destinatario, titulo, elemento) {
   }
   conversaAtiva = destinatario;
   btnContactProfile.hidden = destinatario === "GERAL";
+  contactPresence.hidden = destinatario === "GERAL";
+  sincronizarPresenca();
   document
     .querySelectorAll(".contact-item")
     .forEach((el) => el.classList.remove("active"));
@@ -440,7 +528,11 @@ if (salaGeralItem) {
 
 // Enviar mensagem
 btnSend.addEventListener("click", enviar);
-inputMessage.addEventListener("input", guardarRascunho);
+inputMessage.addEventListener("input", () => {
+  guardarRascunho();
+  registrarDigitacao();
+});
+inputMessage.addEventListener("blur", () => pararDigitacao());
 inputMessage.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.isComposing) {
     event.preventDefault();
@@ -458,6 +550,7 @@ async function enviar() {
     return;
   }
 
+  pararDigitacao();
   const destinatario = conversaAtiva;
   const chave = chaveRascunho(destinatario);
   guardarRascunho();
@@ -719,8 +812,20 @@ document.addEventListener("visibilitychange", carregarMensagens);
 carregarMensagens();
 setInterval(carregarMensagens, 1500);
 
-window.addEventListener("offline", () => mostrarConexao("reconnecting"));
-window.addEventListener("online", carregarMensagens);
+setInterval(sincronizarPresenca, 2500);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) pararDigitacao(false);
+  sincronizarPresenca();
+});
+window.addEventListener("offline", () => {
+  mostrarConexao("reconnecting");
+  pararDigitacao(false);
+  if (!contactPresence.hidden) mostrarPresenca("unavailable");
+});
+window.addEventListener("online", () => {
+  carregarMensagens();
+  sincronizarPresenca();
+});
 btnMenuToggle.addEventListener("click", () => {
   definirMenuConversas(!sidebar.classList.contains("aberta"));
 });
@@ -876,6 +981,7 @@ document.querySelectorAll(".emoji-btn").forEach((btn) => {
       inputMessage.value += btn.getAttribute("data-emoji");
       guardarRascunho();
       inputMessage.focus();
+      registrarDigitacao();
     }
   });
 });
